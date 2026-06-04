@@ -2,17 +2,18 @@ import type { SignalColor, SignalState, VehicleView } from '../types/snapshot';
 import { LAYOUT, roadHalfWidthM, worldToScreen, type View } from './layout';
 import { typeInfo } from './vehicleTypes';
 
-// Light "Notion" palette: warm paper background, white road surfaces, soft gray markings.
+// Light "Notion" paper background with realistic dark asphalt roads and classic
+// white/yellow markings (white roads looked wrong; only the UI around the canvas is light).
 const C = {
-  bg: '#eceae4',
-  road: '#ffffff',
-  box: '#fbfbfa',
-  roadEdge: '#e3e0d8',
-  center: '#e0a82e', // amber center line
-  divider: '#d6d2c8', // dashed lane dividers
-  stopLine: '#9a958a',
-  crosswalk: '#c8c3b6',
-  shadow: 'rgba(40,38,32,0.16)',
+  bg: '#e9e7e1', // warm paper around the roads
+  road: '#3d424b', // dark asphalt
+  box: '#464b55', // intersection box (slightly lighter asphalt)
+  roadEdge: '#2b2e35', // curb
+  center: '#f3b53f', // yellow center line
+  divider: 'rgba(236,236,232,0.55)', // white dashed lane dividers
+  stopLine: 'rgba(245,245,242,0.92)',
+  crosswalk: 'rgba(242,242,238,0.88)', // white zebra
+  shadow: 'rgba(8,10,14,0.32)',
 };
 
 const SIGNAL_RGB: Record<SignalColor, string> = {
@@ -130,9 +131,9 @@ function drawSignals(ctx: CanvasRenderingContext2D, view: View, signals: SignalS
   for (const head of heads) {
     const [sx, sy] = worldToScreen(head.x, head.y, view);
     const r = Math.max(3, 1.3 * view.scale);
-    // housing (light card with border, Notion-ish)
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#d8d4ca';
+    // black signal housing (as on a real signal head)
+    ctx.fillStyle = '#15181f';
+    ctx.strokeStyle = '#0a0c10';
     ctx.lineWidth = 1;
     roundRect(ctx, sx - r - 3, sy - 2 * r - 5, 2 * r + 6, 4 * r + 8, 4);
     ctx.fill();
@@ -144,10 +145,10 @@ function drawSignals(ctx: CanvasRenderingContext2D, view: View, signals: SignalS
 
 function drawLight(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: SignalColor, nowMs: number) {
   const rgb = SIGNAL_RGB[color];
-  // dim base ring
+  // dim (unlit) base inside the black housing
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = '#eceae4';
+  ctx.fillStyle = '#0d1015';
   ctx.fill();
   // active light with glow
   ctx.beginPath();
