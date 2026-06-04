@@ -17,7 +17,7 @@ public enum VehicleType {
     CAR       ("Car",         4.5,  13.9,  2.5,   3.0,  "#60a5fa", false),
     SUV       ("SUV",         4.9,  13.0,  2.2,   2.8,  "#a78bfa", false),
     VAN       ("Van",         5.5,  12.0,  1.8,   2.5,  "#fbbf24", false),
-    BUS       ("Bus",         8.0,  11.0,  1.2,   2.0,  "#fb923c", false),
+    BUS       ("Bus",         9.5,  11.0,  1.2,   2.0,  "#fb923c", false),
     TRUCK     ("Truck",      10.5,  10.0,  1.0,   1.8,  "#94a3b8", false),
     AMBULANCE ("Ambulance",   6.0,  18.0,  3.0,   3.5,  "#ef4444", true),
     FIRETRUCK ("Fire Truck", 10.0,  15.0,  1.6,   2.5,  "#dc2626", true);

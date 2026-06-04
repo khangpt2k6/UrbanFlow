@@ -50,6 +50,17 @@ During the parallel **plan** phase no shared mutable state is written and no loc
 - **Don't block the box**: a vehicle enters the intersection only if it can fully clear it, so the box is always empty during all-red and cross traffic is safe (gridlock is impossible).
 - A **SafetyMonitor** verifies the no-overlap invariant every tick; the live `collisions = 0` figure is a runtime proof.
 
+### Vehicle sizing rules
+
+Each of the 9 types is drawn at its real footprint, governed by rules enforced in `frontend/src/render/vehicleTypes.rules.test.ts`:
+
+- **R1 - one source of truth:** the frontend render lengths mirror the backend `VehicleType.lengthM` exactly (the renderer draws each body along the front-to-rear chord the backend sends, so any drift would overlap or gap).
+- **R2 - realistic order:** bicycle < motorcycle < car <= SUV <= van < bus, and van < truck.
+- **R3 - trucks vs cars/buses:** a truck is never smaller than a car, and a truck stays within ~30% of a bus (the two largest civilians are comparable).
+- **R4 - fits one lane:** every body's drawn width is clamped to `LANE_FIT` (0.92) of a lane, so no vehicle ever spills across the lane lines.
+
+Sprites also carry a per-file `forward` orientation (some artwork is nose-up, some nose-right), so each is rotated to face its travel direction instead of being drawn sideways.
+
 ## Tech stack
 
 - **Backend:** Java 17, Spring Boot 3.2, Maven, STOMP over WebSocket (SockJS), JUnit 5.

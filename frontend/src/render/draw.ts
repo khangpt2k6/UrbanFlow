@@ -1,6 +1,7 @@
 import type { SignalColor, SignalState, VehicleView } from '../types/snapshot';
-import { CROSSWALK_DEPTH, LAYOUT, STOP_SETBACK, roadHalfWidthM, worldToScreen, type View } from './layout';
+import { CROSSWALK_DEPTH, LANE_FIT, LAYOUT, STOP_SETBACK, roadHalfWidthM, worldToScreen, type View } from './layout';
 import { typeInfo } from './vehicleTypes';
+import { drawVehicleArt } from './vehicleArt';
 
 // Bright, cartoon palette.
 const C = {
@@ -21,30 +22,6 @@ const C = {
 
 const ASPECT: Record<SignalColor, string> = { GREEN: '#28d17c', YELLOW: '#ffcf33', RED: '#ff5a52' };
 const ASPECT_DIM: Record<SignalColor, string> = { GREEN: '#1c3a2a', YELLOW: '#3d3520', RED: '#3e2220' };
-
-// Vehicle sprites from /public. `forward` is the direction the artwork points.
-// All sprites in /public are drawn top-down facing RIGHT (front on the +x side).
-const SPRITES: Record<number, { src: string; forward: 'up' | 'right' }> = {
-  2: { src: '/car_blue.webp', forward: 'right' },
-  3: { src: '/car_red.webp', forward: 'right' },
-  4: { src: '/car_blue.webp', forward: 'right' }, // van
-  5: { src: '/bus.png', forward: 'right' },
-  6: { src: '/truck.png', forward: 'right' },
-  7: { src: '/ambulance.png', forward: 'right' },
-  8: { src: '/truck.png', forward: 'right' }, // fire truck
-};
-const spriteCache: Record<string, HTMLImageElement> = {};
-function getSprite(src: string): HTMLImageElement {
-  let img = spriteCache[src];
-  if (!img) {
-    img = new Image();
-    img.src = src;
-    spriteCache[src] = img;
-  }
-  return img;
-}
-// warm the cache immediately
-for (const k of Object.keys(SPRITES)) getSprite(SPRITES[Number(k)].src);
 
 export function drawScene(
   ctx: CanvasRenderingContext2D,
@@ -413,47 +390,23 @@ function drawVehicle(ctx: CanvasRenderingContext2D, view: View, v: VehicleView, 
   const cx = (fx + rxs) / 2;
   const cy = (fy + rys) / 2;
 
-  const desc = SPRITES[v.t];
-  if (desc) {
-    const img = getSprite(desc.src);
-    if (img.complete && img.naturalWidth > 0) {
-      // Width fits one lane; length fills the vehicle's actual front-to-rear slot (the chord),
-      // so trucks no longer spill across lanes and there are no floating gaps.
-      const crossPx = LAYOUT.laneWidth * (info.width >= 2.4 ? 0.94 : 0.8) * view.scale;
-      const lenPx = Math.max(chord, crossPx * 1.25);
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(ang); // all sprites point +x; align with travel direction
-      ctx.drawImage(img, -lenPx / 2, -crossPx / 2, lenPx, crossPx);
-      ctx.restore();
-      return;
-    }
-  }
+  // Footprint in pixels: length fills the real front-to-rear slot (and bends through turns),
+  // width is the true vehicle width clamped to one lane. The body is crisp canvas vector art.
+  const L = Math.max(chord, info.length * view.scale);
+  const W = Math.min(info.width, LANE_FIT * LAYOUT.laneWidth) * view.scale;
 
-  // drawn fallback: bicycle / motorcycle, and any sprite still loading
-  const W = Math.max(3.5, info.width * view.scale);
-  const L = Math.max(W * 1.1, chord);
-  const r = Math.min(4, W / 2.2);
   ctx.save();
-  ctx.translate(fx, fy);
-  ctx.rotate(ang);
+  ctx.translate(cx, cy);
+  ctx.rotate(ang); // nose follows travel direction
+  // soft drop shadow
   ctx.save();
-  ctx.translate(W * 0.14, W * 0.2);
+  ctx.translate(W * 0.12, W * 0.18);
   ctx.fillStyle = C.shadow;
-  roundRect(ctx, -L, -W / 2, L, W, r); ctx.fill();
+  roundRect(ctx, -L / 2, -W / 2, L, W, Math.min(W * 0.4, L * 0.14));
+  ctx.fill();
   ctx.restore();
-  if (v.t === 0 || v.t === 1) drawTwoWheeler(ctx, info.color, L, W, r);
-  else { ctx.fillStyle = info.color; roundRect(ctx, -L, -W / 2, L, W, r); ctx.fill(); ctx.strokeStyle = C.stroke; ctx.lineWidth = Math.max(1, W * 0.07); ctx.stroke(); }
+  drawVehicleArt(ctx, v.t, L, W, info.color, nowMs);
   ctx.restore();
-  void nowMs;
-}
-
-function drawTwoWheeler(ctx: CanvasRenderingContext2D, color: string, L: number, W: number, r: number) {
-  ctx.fillStyle = color;
-  roundRect(ctx, -L, -W / 2, L, W, r); ctx.fill();
-  ctx.strokeStyle = C.stroke; ctx.lineWidth = Math.max(1, W * 0.08); ctx.stroke();
-  ctx.fillStyle = shade(color, -0.4);
-  ctx.beginPath(); ctx.arc(-L * 0.45, 0, Math.max(1.6, W * 0.4), 0, Math.PI * 2); ctx.fill();
 }
 
 // ----------------------------------------------------------------- helpers

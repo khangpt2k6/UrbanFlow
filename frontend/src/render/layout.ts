@@ -44,3 +44,10 @@ export function worldToScreen(x: number, y: number, view: View): [number, number
 export function roadHalfWidthM(): number {
   return LAYOUT.lanesPerSide * LAYOUT.laneWidth;
 }
+
+/**
+ * Max fraction of a lane's width a drawn vehicle body may occupy across (RULE R4: a vehicle must
+ * fit within one lane). The renderer clamps every body's cross-axis to LANE_FIT * laneWidth so no
+ * vehicle ever spills across the lane lines, regardless of its real-world width.
+ */
+export const LANE_FIT = 0.92;
