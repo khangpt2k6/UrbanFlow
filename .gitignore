@@ -16,3 +16,5 @@ frontend/.vite/
 .vscode/
 .DS_Store
 Thumbs.db
+
+.playwright-mcp/

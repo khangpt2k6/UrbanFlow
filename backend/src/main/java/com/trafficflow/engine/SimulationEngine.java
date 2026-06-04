@@ -364,11 +364,12 @@ public class SimulationEngine {
         List<Callable<List<VehicleUpdate>>> tasks = new ArrayList<>();
         for (LaneSlice slice : slices) {
             int n = slice.size();
+            double boxExitS = layout.boxExitS(slice.laneId);
             for (int start = 0; start < n; start += CHUNK) {
                 int end = Math.min(n, start + CHUNK);
                 int s0 = start;
                 int s1 = end;
-                tasks.add(() -> planChunk(slice, s0, s1, signals, stopLineS, dt));
+                tasks.add(() -> planChunk(slice, s0, s1, signals, stopLineS, boxExitS, dt));
             }
         }
         List<VehicleUpdate> updates = new ArrayList<>(worldVehicles.size());
@@ -390,7 +391,7 @@ public class SimulationEngine {
      * signal state, and constants; writes nothing shared. Safe to run on any worker thread.
      */
     private List<VehicleUpdate> planChunk(LaneSlice slice, int from, int to,
-                                          SignalState signals, double stopLineS, double dt) {
+                                          SignalState signals, double stopLineS, double boxExitS, double dt) {
         List<VehicleUpdate> out = new ArrayList<>(to - from);
         SignalColor color = signals.colorFor(slice.laneId.approach(), slice.laneId.movement());
         for (int i = from; i < to; i++) {
@@ -419,6 +420,13 @@ public class SimulationEngine {
                 } else if (color == SignalColor.YELLOW) {
                     double stopDist = (v * v) / (2.0 * type.comfortDecel());
                     mustStop = distToStop >= stopDist; // enough room -> stop, else proceed
+                }
+                // "Don't block the box": hold at the stop line only when the leader is
+                // essentially stopped and still inside the intersection (genuine spillback), so a
+                // vehicle never strands in the box where cross traffic (on paths the per-lane
+                // monitor does not compare) could meet it. Normal moving traffic is not throttled.
+                if (!mustStop && hasLeader && slice.v[i + 1] < 0.5 && leaderRearNow < boxExitS) {
+                    mustStop = true;
                 }
             }
 

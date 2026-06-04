@@ -10,8 +10,9 @@ simulation:
   worker-threads: 24
   # Ticks per second (Hz). 30 Hz x 70 vehicles = 2100+ vehicle-updates/sec.
   tick-hz: 30
-  # Target number of concurrent vehicles (density default).
-  target-vehicles: 70
+  # Target number of concurrent vehicles (density default). 70+ is supported via the control
+  # panel; the default is tuned so traffic flows smoothly out of the box.
+  target-vehicles: 55
   # Approach length in meters (from approach edge to stop line).
   approach-length-m: 120.0
   # Lane width in meters.
@@ -21,8 +22,8 @@ simulation:
   # Deterministic RNG seed for spawning/routing (keeps runs reproducible).
   random-seed: 20260604
   # Default signal phase durations (seconds).
-  ns-green-seconds: 12.0
-  ew-green-seconds: 12.0
+  ns-green-seconds: 15.0
+  ew-green-seconds: 15.0
   yellow-seconds: 3.0
   all-red-seconds: 2.0
   # Distance (m) before the stop line at which an emergency vehicle triggers preemption.

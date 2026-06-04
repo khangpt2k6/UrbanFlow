@@ -39,10 +39,10 @@ function Slider({ label, min, max, step, value, unit, onChange }: SliderProps) {
 
 export default function ControlPanel({ send }: Props) {
   const [speed, setSpeed] = useState(1);
-  const [density, setDensity] = useState(70);
-  const [nsGreen, setNsGreen] = useState(12);
-  const [ewGreen, setEwGreen] = useState(12);
-  const [leftGreen, setLeftGreen] = useState(6);
+  const [density, setDensity] = useState(55);
+  const [nsGreen, setNsGreen] = useState(15);
+  const [ewGreen, setEwGreen] = useState(15);
+  const [leftGreen, setLeftGreen] = useState(5);
   const [yellow, setYellow] = useState(3);
   const [allRed, setAllRed] = useState(2);
   const [approach, setApproach] = useState('NORTH');

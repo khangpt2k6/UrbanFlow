@@ -28,7 +28,7 @@ public class SimulationControls {
         this.targetVehicles.set(props.getTargetVehicles());
         this.nsGreenSeconds = props.getNsGreenSeconds();
         this.ewGreenSeconds = props.getEwGreenSeconds();
-        this.leftGreenSeconds = Math.max(4.0, props.getNsGreenSeconds() * 0.5);
+        this.leftGreenSeconds = 5.0;
         this.yellowSeconds = props.getYellowSeconds();
         this.allRedSeconds = props.getAllRedSeconds();
     }

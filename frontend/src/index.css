@@ -5,6 +5,8 @@ html, body, #root {
 }
 
 body {
-  background: #0b1120;
+  background: #f7f6f3;
+  color: #37352f;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
