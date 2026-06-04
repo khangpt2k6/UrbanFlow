@@ -11,8 +11,9 @@ simulation:
   # Ticks per second (Hz). 30 Hz x 70 vehicles = 2100+ vehicle-updates/sec.
   tick-hz: 30
   # Target number of concurrent vehicles (density default). 70+ is supported via the control
-  # panel; the default is tuned so traffic flows smoothly out of the box.
-  target-vehicles: 55
+  # panel; the default is kept under the intersection's saturation point so traffic flows
+  # visibly rather than standing in queues.
+  target-vehicles: 30
   # Approach length in meters (from approach edge to stop line).
   approach-length-m: 120.0
   # Lane width in meters.

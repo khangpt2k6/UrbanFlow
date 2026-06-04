@@ -46,7 +46,7 @@ export default function CanvasView({ latestRef, prevRef, lastArrivalRef, interva
     const frame = () => {
       const w = canvas.width;
       const h = canvas.height;
-      const view = makeView(w, h, 30 * dpr);
+      const view = makeView(w, h, 12 * dpr);
       const latest = latestRef.current;
       const prev = prevRef.current;
       const now = performance.now();

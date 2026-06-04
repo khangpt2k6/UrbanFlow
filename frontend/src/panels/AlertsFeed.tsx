@@ -5,21 +5,15 @@ interface Props {
 }
 
 export default function AlertsFeed({ alerts }: Props) {
+  if (alerts.length === 0) return null;
   return (
-    <div className="panel alerts-panel">
-      <h2>Emergency alerts</h2>
-      {alerts.length === 0 ? (
-        <p className="alerts-empty">No alerts. Dispatch an emergency vehicle to preempt the signals.</p>
-      ) : (
-        <ul className="alerts-list">
-          {alerts.map((a, i) => (
-            <li key={`${a.ts}-${i}`} className="alert-item">
-              <span className="alert-dot" />
-              <span className="alert-msg">{a.message}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <div className="alerts-float">
+      {alerts.slice(0, 4).map((a, i) => (
+        <div key={`${a.ts}-${i}`} className="toast">
+          <span className="toast-dot" />
+          <span>{a.message}</span>
+        </div>
+      ))}
     </div>
   );
 }

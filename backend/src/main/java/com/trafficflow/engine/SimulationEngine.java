@@ -421,11 +421,11 @@ public class SimulationEngine {
                     double stopDist = (v * v) / (2.0 * type.comfortDecel());
                     mustStop = distToStop >= stopDist; // enough room -> stop, else proceed
                 }
-                // "Don't block the box": hold at the stop line only when the leader is
-                // essentially stopped and still inside the intersection (genuine spillback), so a
-                // vehicle never strands in the box where cross traffic (on paths the per-lane
-                // monitor does not compare) could meet it. Normal moving traffic is not throttled.
-                if (!mustStop && hasLeader && slice.v[i + 1] < 0.5 && leaderRearNow < boxExitS) {
+                // "Don't block the box": on green, enter only if the vehicle can fully clear the
+                // intersection (its leader has passed the box exit). This makes gridlock
+                // impossible at any density - the box always drains - and guarantees it is empty
+                // during all-red, so cross traffic can never meet a stranded vehicle.
+                if (!mustStop && hasLeader && leaderRearNow < boxExitS + SAFE_BACKSTOP) {
                     mustStop = true;
                 }
             }

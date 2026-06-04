@@ -9,8 +9,15 @@ export const LAYOUT = {
   lanesPerSide: 3, // inbound (and outbound) lanes per approach
 };
 
-/** Extent of the world in meters, from one approach's far edge to the opposite one. */
+/** Full world extent in meters (far edge to far edge). */
 export const WORLD_SPAN = 2 * (LAYOUT.approachLength + LAYOUT.half);
+
+/**
+ * Focused viewport span in meters. We zoom in on the action around the intersection rather
+ * than fitting the whole 268 m world, so vehicles are large and legible. Vehicles outside this
+ * window are simply clipped.
+ */
+export const VIEW_SPAN = 150;
 
 export interface View {
   scale: number; // pixels per meter
@@ -18,9 +25,9 @@ export interface View {
   cy: number; // screen y of world origin
 }
 
-export function makeView(canvasW: number, canvasH: number, marginPx = 24): View {
+export function makeView(canvasW: number, canvasH: number, marginPx = 0): View {
   const usable = Math.min(canvasW, canvasH) - 2 * marginPx;
-  const scale = Math.max(0.1, usable / WORLD_SPAN);
+  const scale = Math.max(0.1, usable / VIEW_SPAN);
   return { scale, cx: canvasW / 2, cy: canvasH / 2 };
 }
 

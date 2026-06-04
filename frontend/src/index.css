@@ -5,8 +5,9 @@ html, body, #root {
 }
 
 body {
-  background: #f7f6f3;
-  color: #37352f;
+  background: #080b11;
+  color: #e6edf3;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overflow: hidden;
 }

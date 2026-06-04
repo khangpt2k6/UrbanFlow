@@ -5,15 +5,15 @@ import { typeInfo } from './vehicleTypes';
 // Light "Notion" paper background with realistic dark asphalt roads and classic
 // white/yellow markings (white roads looked wrong; only the UI around the canvas is light).
 const C = {
-  bg: '#e9e7e1', // warm paper around the roads
-  road: '#3d424b', // dark asphalt
-  box: '#464b55', // intersection box (slightly lighter asphalt)
-  roadEdge: '#2b2e35', // curb
+  bg: '#0c1118', // dark ground around the roads
+  road: '#3a3f49', // asphalt
+  box: '#444a55', // intersection box (slightly lighter asphalt)
+  roadEdge: '#23272f', // curb
   center: '#f3b53f', // yellow center line
-  divider: 'rgba(236,236,232,0.55)', // white dashed lane dividers
+  divider: 'rgba(236,236,232,0.5)', // white dashed lane dividers
   stopLine: 'rgba(245,245,242,0.92)',
-  crosswalk: 'rgba(242,242,238,0.88)', // white zebra
-  shadow: 'rgba(8,10,14,0.32)',
+  crosswalk: 'rgba(242,242,238,0.85)', // white zebra
+  shadow: 'rgba(0,0,0,0.40)',
 };
 
 const SIGNAL_RGB: Record<SignalColor, string> = {

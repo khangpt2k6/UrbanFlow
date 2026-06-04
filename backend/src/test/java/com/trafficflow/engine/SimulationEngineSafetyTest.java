@@ -87,7 +87,7 @@ class SimulationEngineSafetyTest {
     void reachesAndHoldsNearTargetDensity() {
         engine.runDeterministic(6000);
         int count = engine.vehicleCount();
-        assertTrue(count >= 40 && count <= 90,
+        assertTrue(count >= 18 && count <= 60,
                 "density should stabilize near the default target, was " + count);
         assertEquals(0, engine.collisions());
     }
