@@ -1,99 +1,89 @@
-# TrafficFlow
+<p align="center">
+  <img src="docs/img/hero.png" alt="A live top-down intersection packed with cars, buses and ambulances" width="860">
+</p>
 
-Real-time, concurrent traffic-control simulation: a Spring Boot engine streams a live world to a React + Canvas control room over STOMP/WebSocket.
+<h1 align="center">TrafficFlow</h1>
 
-![TrafficFlow](screenshot.png)
+<p align="center">
+  <b>A tiny city intersection that comes alive in your browser.</b><br>
+  Up to 120 cars, buses, vans and ambulances pour through one crossing in real time - and never crash.
+</p>
 
-```
-70+ concurrent vehicles | 9 vehicle types | 24 lanes | ~30 managed threads | 2100+ vehicle-updates/sec | 0 collisions
-```
+<p align="center">
+  <code>120 vehicles</code> &nbsp;·&nbsp; <code>9 kinds</code> &nbsp;·&nbsp; <code>24 lanes</code> &nbsp;·&nbsp; <code>30 threads</code> &nbsp;·&nbsp; <code>~3,900 updates a second</code> &nbsp;·&nbsp; <code>0 collisions</code>
+</p>
 
-## What it does
+<br>
 
-- Simulates a signalized 4-way intersection with **24 lanes** (4 approaches x [3 inbound + 3 outbound]) and **70+ vehicles** across **9 types** (bicycle, motorcycle, car, SUV, van, bus, truck, ambulance, fire truck), each with distinct length, speed, and acceleration.
-- Achieves **100% safety** (zero collisions) by construction: intelligent-driver-model car following, protected conflict-free signal phasing, a "don't block the box" rule, and a runtime safety monitor that proves the no-overlap invariant every tick.
-- Runs a genuinely **concurrent architecture** in Java with **~30 managed threads** and **no race conditions or deadlocks**, sustaining **2,100+ vehicle-updates per second**.
-- Ships an interactive **control panel**: live stats, emergency alerts, and full control over simulation speed, traffic density, and every signal duration, plus emergency-vehicle dispatch with signal preemption.
+This is a little world I built to teach myself a few hard things by watching them happen, not by reading about them. Every dot on the road is a vehicle making its own decisions, all at the same time, many times a second. Below is what I actually learned along the way.
 
-## Architecture
+---
 
-```
-  React + Canvas 2D (Vite)                Spring Boot 3 (Java 17)
-  +-----------------------+   STOMP/ws    +-------------------------------+
-  |  CanvasView (rAF,     | <===========  |  /topic/world  (~30 Hz)       |
-  |   interpolated)       |   snapshots   |  /topic/stats  (~4 Hz)        |
-  |  Control / Stats /    | ===========>  |  /topic/alerts                |
-  |   Alerts panels       |   commands    |  /app/control                 |
-  +-----------------------+               +---------------+---------------+
-                                                          |
-                                  SimulationEngine (3-phase tick @ 30 Hz)
-                                  1. PLAN      24-thread worker pool; reads the
-                                               previous immutable snapshot only
-                                  2. COMMIT    single-threaded, the only writer
-                                  3. BROADCAST async snapshot push
-                                  + signal, emergency, spawner, stats threads
-```
+## Doing a hundred things at once (without it falling apart)
 
-### Why it is race-free and deadlock-free
+The whole point was traffic where every car thinks for itself, all together, all the time. That sounds simple until you try it: when a hundred little "minds" reach for the same shared world at the same instant, things normally corrupt or freeze.
 
-During the parallel **plan** phase no shared mutable state is written and no locks are held, so there are no data races and no lock cycles, by construction rather than by luck. All mutation happens single-threaded in **commit**, and every reader (worker pool, emergency dispatcher, stats thread) consumes a fresh **immutable snapshot** published through an `AtomicReference`, which provides the happens-before guarantee. Controllers communicate via a `ConcurrentLinkedQueue` and atomics, never touching world state directly.
+The idea that made it click for me was surprisingly calm:
 
-### The ~30 threads
+> Everyone reads from the same frozen **photo** of the world. Then a single referee writes the **next** photo. Nobody ever scribbles on the same page at the same time.
 
-24 plan-phase workers + clock + signal controller + emergency dispatcher + vehicle spawner + stats aggregator + broadcaster = **30**.
+So roughly thirty workers can all look at the road at once (because a photo can't change while you read it), and only one of them is ever allowed to paint the next moment. With that one rule in place, the simulation never trips over itself and never locks up. That was the big lesson: the fix for chaos was not more locks and guards, it was giving everyone something that can't change underneath them.
 
-### Safety, layered
+<p align="center">
+  <img src="docs/img/model.png" alt="Close-up of the intersection: signals, crosswalks and queued cars" width="560">
+</p>
 
-- **Intelligent Driver Model** car-following keeps a safe time-headway gap.
-- A **hard per-leader backstop** caps each vehicle so its front bumper can never pass the leader's rear (no rear-end overlap even under discrete-step rounding).
-- **Protected 4-phase signals** (NS-through, NS-left, EW-through, EW-left) separated by yellow + all-red clearance: within any green phase no permitted movements cross, and each outbound lane is fed by exactly one movement (no merges).
-- **Don't block the box**: a vehicle enters the intersection only if it can fully clear it, so the box is always empty during all-red and cross traffic is safe (gridlock is impossible).
-- A **SafetyMonitor** verifies the no-overlap invariant every tick; the live `collisions = 0` figure is a runtime proof.
+---
 
-### Vehicle sizing rules
+## The design
 
-Each of the 9 types is drawn at its real footprint, governed by rules enforced in `frontend/src/render/vehicleTypes.rules.test.ts`:
+I wanted it to feel like a friendly control room, not a spreadsheet. A bright, top-down cartoon town on the left, a calm panel of controls and live numbers on the right, and a little compass tucked in the corner so you always know which way is North.
 
-- **R1 - one source of truth:** the frontend render lengths mirror the backend `VehicleType.lengthM` exactly (the renderer draws each body along the front-to-rear chord the backend sends, so any drift would overlap or gap).
-- **R2 - realistic order:** bicycle < motorcycle < car <= SUV <= van < bus, and van < truck.
-- **R3 - trucks vs cars/buses:** a truck is never smaller than a car, and a truck stays within ~30% of a bus (the two largest civilians are comparable).
-- **R4 - fits one lane:** every body's drawn width is clamped to `LANE_FIT` (0.92) of a lane, so no vehicle ever spills across the lane lines.
+<p align="center">
+  <img src="docs/img/welcome.png" alt="The TrafficFlow welcome screen" width="720">
+</p>
 
-Sprites also carry a per-file `forward` orientation (some artwork is nose-up, some nose-right), so each is rotated to face its travel direction instead of being drawn sideways.
+A few **design patterns** I picked up, in plain words:
 
-## Tech stack
+- **The shared photo** - one snapshot of the world that everybody reads from, swapped out all at once. (This is what keeps the crowd of workers from fighting.)
+- **The mailbox** - when you drag a slider or send an ambulance, it doesn't reach into the engine. It drops a note in a box, and the engine reads its mail when it's ready.
+- **The heartbeat** - the world ticks about thirty times a second, like a game loop, so motion looks smooth even though the data arrives in little bursts.
 
-- **Backend:** Java 17, Spring Boot 3.2, Maven, STOMP over WebSocket (SockJS), JUnit 5.
-- **Frontend:** React 19 + TypeScript, Vite, Canvas 2D, `@stomp/stompjs` + `sockjs-client`, Vitest.
+The nicest surprise was how much of "good design" turned out to be about *who is allowed to touch what, and when*.
 
-## Running locally
+---
 
-Prerequisites: Java 17+, Maven, Node 18+.
+## The rules that keep everyone safe
 
-```bash
-# 1. Backend (port 8080)
-cd backend
-mvn spring-boot:run
+To get to **zero crashes**, I had to teach the cars the same rules we all learned for the road. Writing them down as code made me realize how much careful etiquette is hidden in an ordinary intersection:
 
-# 2. Frontend (port 5173), in a second terminal
-cd frontend
-npm install
-npm run dev
-```
+- **Keep your distance.** Every vehicle watches the one ahead and leaves a real gap, easing off the gas as it closes in.
+- **Green means the whole path is yours.** The lights are timed so the streams that get a green never cross each other - left turns get their own moment, with a yellow and an all-red pause in between.
+- **Never block the box.** A car only enters the middle if it can make it all the way out. That single rule makes gridlock impossible.
+- **A red light is a wall.** Cars stop cleanly at the line and wait their turn.
+- **Make way for sirens.** An ambulance or fire truck flips the lights in its favour and everyone yields.
 
-Open http://localhost:5173 and click "Launch simulation". Tip: the default density is tuned for smooth flow; drag the Density slider up toward 120 to stress the intersection (it stays collision-free).
+A watcher checks the whole road on every single heartbeat and confirms no two vehicles ever overlap. The `0 collisions` you see on screen isn't a hope - it's checked thousands of times a second.
 
-## Testing
+---
 
-```bash
-# Backend: 42 tests, including a deterministic safety stress test (zero collisions
-# over thousands of ticks) and a live throughput test (2100+ updates/sec under real concurrency).
-cd backend && mvn test
+## A little living world
 
-# Frontend unit tests
-cd frontend && npx vitest run
-```
+Nine kinds of vehicle, each drawn at its real size, from a bicycle up to a fire truck. They were the most fun part: getting a bus to feel heavy and a motorbike to feel nimble, and making sure nothing ever spills over its lane lines.
 
-## Roadmap
+<p align="center">
+  <img src="docs/img/cars.png" alt="A row of different vehicles - cars, vans, a bus and motorbikes" width="780">
+</p>
 
-- Phase 2: a three.js 3D view that subscribes to the same `/topic/world` feed (no backend change).
+And because an empty grid is lonely, the town got trees, a pond, flowerbeds and little houses around the edges - a calm green backdrop for all the rushing.
+
+<p align="center">
+  <img src="docs/img/tree.png" alt="Trees, a bush and a pond on the grass beside the road" width="420">
+</p>
+
+---
+
+<p align="center">
+  Built for the love of watching systems work.<br>
+  <sub>Java for the brain · React + Canvas for the window · streamed live over WebSocket.</sub>
+</p>
