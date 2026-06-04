@@ -506,8 +506,9 @@ public class SimulationEngine {
         List<VehicleView> views = new ArrayList<>(worldVehicles.size());
         for (Vehicle v : worldVehicles) {
             Pose p = v.path.poseAt(v.s);
+            Pose rear = v.path.poseAt(Math.max(0.0, v.s - v.type.lengthM()));
             views.add(new VehicleView(v.id, v.type.ordinal(), round(p.x()), round(p.y()),
-                    round(p.headingRad()), round(v.v), v.emergency()));
+                    round(p.headingRad()), round(v.v), v.emergency(), round(rear.x()), round(rear.y())));
         }
         SignalState signals = signalController.currentState();
         SimulationStats stats = statsAggregator.latest();

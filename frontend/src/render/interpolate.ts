@@ -31,6 +31,8 @@ export function interpolateVehicles(
       ...v,
       x: p.x + (v.x - p.x) * a,
       y: p.y + (v.y - p.y) * a,
+      rx: p.rx + (v.rx - p.rx) * a,
+      ry: p.ry + (v.ry - p.ry) * a,
       h: lerpAngle(p.h, v.h, a),
     };
   });

@@ -3,7 +3,7 @@ import { lerpAngle, interpolateVehicles } from '../src/render/interpolate';
 import type { VehicleView } from '../src/types/snapshot';
 
 function v(id: number, x: number, y: number, h = 0): VehicleView {
-  return { id, t: 2, x, y, h, v: 5, emer: false };
+  return { id, t: 2, x, y, h, v: 5, emer: false, rx: x, ry: y };
 }
 
 describe('lerpAngle', () => {

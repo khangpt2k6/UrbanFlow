@@ -15,8 +15,8 @@ public class SimulationProperties {
     private int workerThreads = 24;
     /** Simulation ticks per second. */
     private int tickHz = 30;
-    /** Default target number of concurrent vehicles. */
-    private int targetVehicles = 70;
+    /** Default target number of concurrent vehicles (kept below saturation for visible flow). */
+    private int targetVehicles = 30;
     /** Approach length in meters (approach edge to stop line). */
     private double approachLengthM = 120.0;
     /** Lane width in meters. */
@@ -26,9 +26,9 @@ public class SimulationProperties {
     /** Deterministic RNG seed for spawning/routing. */
     private long randomSeed = 20260604L;
     /** Default North-South green duration (seconds). */
-    private double nsGreenSeconds = 12.0;
+    private double nsGreenSeconds = 15.0;
     /** Default East-West green duration (seconds). */
-    private double ewGreenSeconds = 12.0;
+    private double ewGreenSeconds = 15.0;
     /** Yellow duration (seconds). */
     private double yellowSeconds = 3.0;
     /** All-red clearance duration (seconds). */

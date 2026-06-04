@@ -7,11 +7,13 @@ export type ApproachName = 'NORTH' | 'SOUTH' | 'EAST' | 'WEST';
 export interface VehicleView {
   id: number;
   t: number; // vehicle type ordinal
-  x: number; // world meters, +x East
-  y: number; // world meters, +y North
+  x: number; // front-bumper world x (meters, +x East)
+  y: number; // front-bumper world y (meters, +y North)
   h: number; // heading radians
   v: number; // speed m/s
   emer: boolean;
+  rx: number; // rear-bumper world x
+  ry: number; // rear-bumper world y
 }
 
 export interface SignalState {
