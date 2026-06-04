@@ -49,14 +49,16 @@ export function drawScene(
 }
 
 // ----------------------------------------------------------------- compass
-// Fixed screen-space compass rose in the top-left corner. World frame is +x East,
-// +y North with a flipped screen y, so North=up, South=down, East=right, West=left.
+// Fixed screen-space compass rose in the bottom-left corner. The top edge holds the
+// brand + status pill and the bottom-right holds the alert toasts, so the lower-left
+// is the only HUD-free corner. World frame is +x East, +y North with a flipped screen
+// y, so North=up, South=down, East=right, West=left.
 // Labels use Vietnamese cardinals: B (Bac/N), N (Nam/S), Đ (Dong/E), T (Tay/W).
 function drawCompass(ctx: CanvasRenderingContext2D, canvasW: number, canvasH: number) {
   const r = Math.max(30, Math.min(canvasW, canvasH) * 0.055);
   const m = r + Math.max(14, r * 0.5); // keep the dial clear of the corner
   const cx = m;
-  const cy = m;
+  const cy = canvasH - m;
 
   ctx.save();
   ctx.textAlign = 'center';
@@ -127,6 +129,8 @@ function drawCompass(ctx: CanvasRenderingContext2D, canvasW: number, canvasH: nu
 }
 
 // ----------------------------------------------------------------- scenery
+let sceneryWarned = false;
+
 function drawScenery(ctx: CanvasRenderingContext2D, view: View) {
   // Houses / buildings (x, y, w, h, color).
   const buildings: [number, number, number, number, string][] = [
@@ -136,26 +140,52 @@ function drawScenery(ctx: CanvasRenderingContext2D, view: View) {
   ];
   for (const [x, y, w, h, c] of buildings) drawBuilding(ctx, view, x, y, w, h, c);
 
-  drawPond(ctx, view, -44, 44, 36, 24);
+  const pond = { x: -44, y: 44, rx: 18, ry: 12 };
+  drawPond(ctx, view, pond.x, pond.y, pond.rx * 2, pond.ry * 2);
+
+  // Keep greenery off the rooftops and out of the pond, and flowers out of any tree's
+  // canopy (else it looks like the tree bloomed). Enforced in code so a future coordinate
+  // tweak can never drop a tree onto a building again.
+  const onBuilding = (x: number, y: number, pad: number) =>
+    buildings.some(([bx, by, bw, bh]) => Math.abs(x - bx) < bw / 2 + pad && Math.abs(y - by) < bh / 2 + pad);
+  const inPond = (x: number, y: number, pad: number) => {
+    const dx = (x - pond.x) / (pond.rx + pad), dy = (y - pond.y) / (pond.ry + pad);
+    return dx * dx + dy * dy < 1;
+  };
 
   // Lots of trees of varied sizes for a lush, park-like feel.
-  const trees: [number, number, number][] = [
-    [22, 62, 1.1], [40, 70, 0.8], [52, 58, 1.2], [64, 46, 0.9], [70, 64, 1.0], [30, 50, 0.7],
-    [24, -56, 1.1], [42, -64, 0.85], [54, -50, 1.2], [66, -42, 0.9], [72, -60, 1.0], [38, -48, 0.7],
+  const treesRaw: [number, number, number][] = [
+    [22, 62, 1.1], [40, 70, 0.8], [52, 58, 1.2], [64, 46, 0.9], [70, 64, 1.0], [16, 40, 0.9],
+    [24, -56, 1.1], [42, -64, 0.85], [54, -50, 1.2], [66, -42, 0.9], [72, -60, 1.0], [18, -40, 0.9],
     [-24, -52, 1.1], [-42, -62, 0.9], [-54, -44, 1.2], [-64, -56, 0.85], [-30, -68, 1.0], [-70, -40, 0.8],
     [-58, 56, 1.1], [-30, 60, 0.9], [-66, 38, 1.0], [-48, 66, 0.85], [-72, 60, 0.8], [-20, 70, 0.7],
   ];
+  const trees = treesRaw.filter(([x, y]) => !onBuilding(x, y, 2) && !inPond(x, y, 2));
   for (const [x, y, s] of trees) drawTree(ctx, view, x, y, s);
 
+  const treeClear = (x: number, y: number) =>
+    !trees.some(([tx, ty, ts]) => Math.hypot(x - tx, y - ty) < 6 * ts);
+
   // Bushes and flower clusters scatter green/colour across the lawns.
-  const bushes: [number, number][] = [
+  const bushesRaw: [number, number][] = [
     [16, 50], [60, 36], [44, -38], [20, -44], [-18, -40], [-48, -54], [-20, 52], [-60, 48], [70, 30], [-70, 28],
   ];
+  const bushes = bushesRaw.filter(([x, y]) => !onBuilding(x, y, 1.5) && !inPond(x, y, 1));
   for (const [x, y] of bushes) drawBush(ctx, view, x, y);
-  const flowers: [number, number][] = [
+
+  const flowersRaw: [number, number][] = [
     [18, 58], [50, 64], [28, -50], [58, -58], [-26, -60], [-52, 60], [-38, 52], [62, 52],
+    [14, 30], [14, -30], [-14, 44], [-14, -30],
   ];
+  const flowers = flowersRaw.filter(([x, y]) => !onBuilding(x, y, 1) && !inPond(x, y, 1) && treeClear(x, y));
   for (const [x, y] of flowers) drawFlowers(ctx, view, x, y);
+
+  if (!sceneryWarned) {
+    sceneryWarned = true;
+    const hidden = (treesRaw.length - trees.length) + (bushesRaw.length - bushes.length) + (flowersRaw.length - flowers.length);
+    if (hidden > 0)
+      console.warn(`[scenery] ${hidden} item(s) overlapped a building/pond/tree and were hidden. Move their coordinates in drawScenery().`);
+  }
 }
 
 function drawBush(ctx: CanvasRenderingContext2D, view: View, x: number, y: number) {

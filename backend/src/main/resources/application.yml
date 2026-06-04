@@ -8,9 +8,9 @@ spring:
 simulation:
   # Parallel plan-phase worker pool size. 24 workers + 6 named service threads = ~30 total.
   worker-threads: 24
-  # Ticks per second (Hz). 30 Hz x 70 vehicles = 2100+ vehicle-updates/sec.
+  # Ticks per second (Hz). At 30 Hz the engine sustains 2,100+ vehicle-updates/sec (tested floor).
   tick-hz: 30
-  # Target number of concurrent vehicles (density default). 70+ is supported via the control
+  # Target number of concurrent vehicles (density default). Up to 120 is supported via the control
   # panel; the default is kept under the intersection's saturation point so traffic flows
   # visibly rather than standing in queues.
   target-vehicles: 45

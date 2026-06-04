@@ -74,7 +74,13 @@ export function useTrafficStream(): TrafficStream {
         setAlerts((prev) => [a, ...prev].slice(0, 40));
       });
     };
-    client.onWebSocketClose = () => setConnected(false);
+    client.onWebSocketClose = () => {
+      // Until the WebSocket is connected, show empty roads + scenery only (no vehicles/signals).
+      setConnected(false);
+      latestRef.current = null;
+      prevRef.current = null;
+      setStats(null);
+    };
     client.activate();
     clientRef.current = client;
 

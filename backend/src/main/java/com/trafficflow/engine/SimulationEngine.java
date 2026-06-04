@@ -113,6 +113,9 @@ public class SimulationEngine {
     private final double baseDt;
     private double stepAccumulator = 0;
     private long lastTickNanos = 0L;
+    /** The world only advances while at least one browser is connected (set from STOMP session
+     *  events). With nobody watching the simulation stays idle and the road is empty. */
+    private volatile boolean clientsConnected = false;
 
     // Cross-thread handoffs.
     private final ConcurrentLinkedQueue<ControlCommand> commandQueue = new ConcurrentLinkedQueue<>();
@@ -206,6 +209,15 @@ public class SimulationEngine {
         commandQueue.add(command);
     }
 
+    /** Gates the whole simulation on having an audience; driven by STOMP session connect/disconnect. */
+    public void setClientsConnected(boolean connected) {
+        this.clientsConnected = connected;
+    }
+
+    public boolean clientsConnected() {
+        return clientsConnected;
+    }
+
     // ---------------------------------------------------------------------------------------
     // Scheduled service ticks (each on its own thread)
     // ---------------------------------------------------------------------------------------
@@ -219,6 +231,10 @@ public class SimulationEngine {
             double realElapsed = (now - lastTickNanos) / 1_000_000_000.0;
             lastTickNanos = now;
 
+            if (!clientsConnected) {
+                stepAccumulator = 0; // nobody connected: stay idle (empty road), no broadcast
+                return;
+            }
             if (controls.isPaused()) {
                 broadcast(buildSnapshot());
                 return;
@@ -246,6 +262,9 @@ public class SimulationEngine {
     }
 
     private void emergencyTick() {
+        if (!clientsConnected) {
+            return;
+        }
         String alert = emergencyDispatcher.update(publishedStates.get());
         if (alert != null) {
             publisher.publishAlert(alert);
@@ -253,6 +272,9 @@ public class SimulationEngine {
     }
 
     private void spawnerTick() {
+        if (!clientsConnected) {
+            return; // don't accumulate vehicles while nobody is connected
+        }
         int n = spawner.spawnCount(publishedStates.get().size());
         for (int i = 0; i < n; i++) {
             enqueue(new ControlCommand.SpawnCivilian());

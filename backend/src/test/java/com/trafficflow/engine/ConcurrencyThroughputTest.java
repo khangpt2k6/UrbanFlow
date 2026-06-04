@@ -29,6 +29,7 @@ class ConcurrencyThroughputTest {
 
     @Test
     void sustainsTargetThroughputWithZeroCollisions() throws InterruptedException {
+        engine.setClientsConnected(true); // no real STOMP client in this test; enable the engine
         controls.setTargetVehicles(80); // headroom so steady-state comfortably exceeds 2100/s
 
         // Warm up: density fills at a lane-entry-limited rate, so poll until it is near target

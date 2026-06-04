@@ -3,7 +3,7 @@ interface Props {
 }
 
 const STATS = [
-  { value: '70+', label: 'vehicles' },
+  { value: '120', label: 'vehicles' },
   { value: '9', label: 'types' },
   { value: '24', label: 'lanes' },
   { value: '30', label: 'threads' },
@@ -25,8 +25,8 @@ export default function WelcomePage({ onLaunch }: Props) {
           Traffic<span>Flow</span>
         </h1>
         <p className="welcome-tag">
-          A concurrent traffic-control engine in Java, streamed live to your browser. Watch 70+
-          vehicles negotiate a signalized intersection with zero collisions, in real time.
+          A concurrent traffic-control engine in Java, streamed live to your browser. Watch up to
+          120 vehicles negotiate a signalized intersection with zero collisions, in real time.
         </p>
 
         <div className="welcome-stats">
