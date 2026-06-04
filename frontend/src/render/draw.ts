@@ -68,6 +68,85 @@ export function drawScene(
   drawStopLines(ctx, view);
   for (const v of vehicles) drawVehicle(ctx, view, v, nowMs);
   if (signals) drawSignals(ctx, view, signals);
+  drawCompass(ctx, canvasW, canvasH);
+}
+
+// ----------------------------------------------------------------- compass
+// Fixed screen-space compass rose in the top-left corner. World frame is +x East,
+// +y North with a flipped screen y, so North=up, South=down, East=right, West=left.
+// Labels use Vietnamese cardinals: B (Bac/N), N (Nam/S), Đ (Dong/E), T (Tay/W).
+function drawCompass(ctx: CanvasRenderingContext2D, canvasW: number, canvasH: number) {
+  const r = Math.max(30, Math.min(canvasW, canvasH) * 0.055);
+  const m = r + Math.max(14, r * 0.5); // keep the dial clear of the corner
+  const cx = m;
+  const cy = m;
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // drop shadow + dial face
+  ctx.beginPath(); ctx.arc(cx + 2, cy + 4, r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(30,40,30,0.22)'; ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.fill();
+  ctx.lineWidth = Math.max(2, r * 0.06); ctx.strokeStyle = 'rgba(40,46,58,0.55)'; ctx.stroke();
+
+  // tick marks around the ring
+  ctx.strokeStyle = 'rgba(40,46,58,0.35)';
+  ctx.lineWidth = Math.max(1, r * 0.03);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const r0 = i % 2 === 0 ? r * 0.82 : r * 0.9;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+    ctx.lineTo(cx + Math.cos(a) * r * 0.97, cy + Math.sin(a) * r * 0.97);
+    ctx.stroke();
+  }
+
+  // four-point star (North highlighted red), each point drawn pointing "up" then rotated
+  const tip = r * 0.6;
+  const w = r * 0.18;
+  const dirs: [number, string, string][] = [
+    [0, '#ff6a62', '#d63b34'],            // North  -> up
+    [Math.PI / 2, '#e3e8ef', '#aab3c0'],  // East   -> right
+    [Math.PI, '#e3e8ef', '#aab3c0'],      // South  -> down
+    [-Math.PI / 2, '#e3e8ef', '#aab3c0'], // West   -> left
+  ];
+  for (const [rot, light, dark] of dirs) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rot);
+    const sh = -tip * 0.3; // shoulder y
+    // right half (light)
+    ctx.beginPath();
+    ctx.moveTo(0, -tip); ctx.lineTo(w, sh); ctx.lineTo(0, 0); ctx.closePath();
+    ctx.fillStyle = light; ctx.fill();
+    // left half (dark) for an engraved look
+    ctx.beginPath();
+    ctx.moveTo(0, -tip); ctx.lineTo(-w, sh); ctx.lineTo(0, 0); ctx.closePath();
+    ctx.fillStyle = dark; ctx.fill();
+    ctx.restore();
+  }
+
+  // center hub
+  ctx.beginPath(); ctx.arc(cx, cy, Math.max(2, r * 0.08), 0, Math.PI * 2);
+  ctx.fillStyle = '#3a4150'; ctx.fill();
+
+  // cardinal labels
+  const lr = r * 0.82;
+  ctx.font = `bold ${Math.round(r * 0.34)}px system-ui, sans-serif`;
+  const labels: [string, number, number, string][] = [
+    ['B', cx, cy - lr, '#d63b34'],
+    ['N', cx, cy + lr, '#3a4150'],
+    ['Đ', cx + lr, cy, '#3a4150'],
+    ['T', cx - lr, cy, '#3a4150'],
+  ];
+  for (const [t, x, y, col] of labels) {
+    ctx.fillStyle = col;
+    ctx.fillText(t, x, y);
+  }
+  ctx.restore();
 }
 
 // ----------------------------------------------------------------- scenery
@@ -292,23 +371,19 @@ function drawVehicle(ctx: CanvasRenderingContext2D, view: View, v: VehicleView, 
   const ang = chord > 0.5 ? Math.atan2(dy, dx) : -v.h;
   const cx = (fx + rxs) / 2;
   const cy = (fy + rys) / 2;
-  const lengthPx = info.length * view.scale * 1.25;
 
   const desc = SPRITES[v.t];
   if (desc) {
     const img = getSprite(desc.src);
     if (img.complete && img.naturalWidth > 0) {
+      // Width fits one lane; length fills the vehicle's actual front-to-rear slot (the chord),
+      // so trucks no longer spill across lanes and there are no floating gaps.
+      const crossPx = LAYOUT.laneWidth * (info.width >= 2.4 ? 0.94 : 0.8) * view.scale;
+      const lenPx = Math.max(chord, crossPx * 1.25);
       ctx.save();
       ctx.translate(cx, cy);
-      if (desc.forward === 'right') {
-        ctx.rotate(ang);
-        const s = lengthPx / img.naturalWidth;
-        ctx.drawImage(img, -lengthPx / 2, -(img.naturalHeight * s) / 2, lengthPx, img.naturalHeight * s);
-      } else {
-        ctx.rotate(ang + Math.PI / 2);
-        const s = lengthPx / img.naturalHeight;
-        ctx.drawImage(img, -(img.naturalWidth * s) / 2, -lengthPx / 2, img.naturalWidth * s, lengthPx);
-      }
+      ctx.rotate(ang); // all sprites point +x; align with travel direction
+      ctx.drawImage(img, -lenPx / 2, -crossPx / 2, lenPx, crossPx);
       ctx.restore();
       return;
     }
