@@ -1,0 +1,120 @@
+package com.trafficflow.control;
+
+import com.trafficflow.config.SimulationProperties;
+import com.trafficflow.model.Approach;
+import com.trafficflow.model.Axis;
+import com.trafficflow.model.Movement;
+import com.trafficflow.model.SignalColor;
+import com.trafficflow.model.SignalState;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.util.EnumSet;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class SignalControllerTest {
+
+    private SignalController signals;
+
+    @BeforeEach
+    void setUp() {
+        signals = new SignalController(new SimulationControls(new SimulationProperties()));
+        signals.stepTo(0); // seed
+    }
+
+    /**
+     * Independent safety invariant (does not rely on the controller's internal grouping):
+     * the set of non-red movements must come from a single approach, or from approaches sharing
+     * one axis AND one movement class (all left, or all through/right). This is exactly what
+     * prevents the real geometric conflicts (e.g. N-left crossing S-through).
+     */
+    private void assertConflictFree(SignalState s) {
+        Set<Approach> active = EnumSet.noneOf(Approach.class);
+        boolean anyLeft = false;
+        boolean anyThroughRight = false;
+        for (Approach a : Approach.values()) {
+            for (Movement m : Movement.values()) {
+                if (s.colorFor(a, m) != SignalColor.RED) {
+                    active.add(a);
+                    if (m == Movement.LEFT) {
+                        anyLeft = true;
+                    } else {
+                        anyThroughRight = true;
+                    }
+                }
+            }
+        }
+        if (active.size() <= 1) {
+            return; // single approach (or none) is always conflict-free
+        }
+        Set<Axis> axes = EnumSet.noneOf(Axis.class);
+        active.forEach(a -> axes.add(a.axis()));
+        assertTrue(axes.size() == 1, "active approaches must share one axis in phase " + s.phase());
+        assertFalse(anyLeft && anyThroughRight,
+                "left and through/right cannot both be active across approaches in phase " + s.phase());
+    }
+
+    @Test
+    void normalCycleIsAlwaysConflictFree() {
+        for (long t = 0; t <= 200_000; t += 100) {
+            signals.stepTo(t);
+            assertConflictFree(signals.currentState());
+        }
+    }
+
+    @Test
+    void cycleVisitsAllFourGreenGroups() {
+        boolean nsThrough = false, nsLeft = false, ewThrough = false, ewLeft = false;
+        for (long t = 0; t <= 300_000; t += 50) {
+            signals.stepTo(t);
+            String phase = signals.currentState().phase();
+            if (phase.equals("NS_THROUGH")) nsThrough = true;
+            if (phase.equals("NS_LEFT")) nsLeft = true;
+            if (phase.equals("EW_THROUGH")) ewThrough = true;
+            if (phase.equals("EW_LEFT")) ewLeft = true;
+        }
+        assertTrue(nsThrough && nsLeft && ewThrough && ewLeft,
+                "the ring should visit all four protected green groups");
+    }
+
+    @Test
+    void preemptionServesRequestedApproachAndStaysConflictFree() {
+        signals.requestPreempt(Approach.EAST);
+        boolean eastFullyGreen = false;
+        for (long t = 0; t <= 60_000; t += 50) {
+            signals.stepTo(t);
+            SignalState s = signals.currentState();
+            assertConflictFree(s);
+            if (s.colorFor(Approach.EAST, Movement.THROUGH) == SignalColor.GREEN
+                    && s.colorFor(Approach.EAST, Movement.LEFT) == SignalColor.GREEN
+                    && s.colorFor(Approach.NORTH, Movement.THROUGH) == SignalColor.RED
+                    && s.colorFor(Approach.WEST, Movement.THROUGH) == SignalColor.RED) {
+                eastFullyGreen = true;
+            }
+        }
+        assertTrue(eastFullyGreen, "preemption should serve the EAST approach green with others red");
+    }
+
+    @Test
+    void clearingPreemptionResumesNormalCycle() {
+        signals.requestPreempt(Approach.NORTH);
+        long t = 0;
+        for (; t <= 30_000; t += 50) {
+            signals.stepTo(t);
+        }
+        signals.requestPreempt(null);
+        boolean resumed = false;
+        for (; t <= 120_000; t += 50) {
+            signals.stepTo(t);
+            assertConflictFree(signals.currentState());
+            String phase = signals.currentState().phase();
+            if (phase.startsWith("EW") || phase.equals("NS_LEFT")) {
+                resumed = true; // a normal (non-preempt) green group reappeared
+            }
+        }
+        assertTrue(resumed, "normal cycling should resume after preemption is cleared");
+    }
+}
