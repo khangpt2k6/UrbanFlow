@@ -83,6 +83,10 @@ public class SimulationEngine {
     private static final double SAFE_BACKSTOP = 0.5;
     /** Spawn entry speed cap (m/s). */
     private static final double ENTRY_SPEED = 8.0;
+    /** Conservative speed used to estimate box-clearing time for the entry time-gate (m/s). */
+    private static final double CLEAR_SPEED_EST = 4.5;
+    /** Two cross-axis vehicles closer than this inside the box count as a conflict (meters). */
+    private static final double BOX_CONFLICT_DIST = 4.0;
 
     private final SimulationProperties props;
     private final IntersectionLayout layout;
@@ -291,6 +295,43 @@ public class SimulationEngine {
             collisions.addAndGet(violations.size());
             log.warn("SAFETY VIOLATION x{} (first: {})", violations.size(), violations.get(0));
         }
+
+        int boxConflicts = checkBoxConflicts(states);
+        if (boxConflicts > 0) {
+            collisions.addAndGet(boxConflicts);
+            log.warn("BOX CONFLICT x{} (cross traffic met inside the intersection)", boxConflicts);
+        }
+    }
+
+    /**
+     * Verifies the time-gate kept the intersection clear: no two vehicles from conflicting axes
+     * are simultaneously close inside the box. A non-zero count means cross traffic overlapped,
+     * which must never happen.
+     */
+    private int checkBoxConflicts(List<VehicleState> states) {
+        double boxEntry = layout.boxEntryS();
+        List<double[]> inBox = new ArrayList<>(); // {x, y, axisOrdinal}
+        for (VehicleState st : states) {
+            double s = st.s();
+            if (s >= boxEntry && s <= layout.boxExitS(st.laneId())) {
+                Pose p = layout.path(st.laneId()).poseAt(s);
+                inBox.add(new double[]{p.x(), p.y(), st.laneId().approach().axis().ordinal()});
+            }
+        }
+        int conflicts = 0;
+        for (int i = 0; i < inBox.size(); i++) {
+            for (int j = i + 1; j < inBox.size(); j++) {
+                if (inBox.get(i)[2] == inBox.get(j)[2]) {
+                    continue; // same axis: paths within a green group never cross
+                }
+                double dx = inBox.get(i)[0] - inBox.get(j)[0];
+                double dy = inBox.get(i)[1] - inBox.get(j)[1];
+                if (Math.hypot(dx, dy) < BOX_CONFLICT_DIST) {
+                    conflicts++;
+                }
+            }
+        }
+        return conflicts;
     }
 
     private void drainCommands() {
@@ -361,6 +402,9 @@ public class SimulationEngine {
             return List.of();
         }
         double stopLineS = layout.stopLineS();
+        SignalController.PhaseTiming timing = signalController.phaseTiming();
+        double greenRemainingSec = timing.greenRemainingSec();
+        double clearanceSec = timing.clearanceSec();
         List<Callable<List<VehicleUpdate>>> tasks = new ArrayList<>();
         for (LaneSlice slice : slices) {
             int n = slice.size();
@@ -369,7 +413,8 @@ public class SimulationEngine {
                 int end = Math.min(n, start + CHUNK);
                 int s0 = start;
                 int s1 = end;
-                tasks.add(() -> planChunk(slice, s0, s1, signals, stopLineS, boxExitS, dt));
+                tasks.add(() -> planChunk(slice, s0, s1, signals, stopLineS, boxExitS,
+                        greenRemainingSec, clearanceSec, dt));
             }
         }
         List<VehicleUpdate> updates = new ArrayList<>(worldVehicles.size());
@@ -391,7 +436,8 @@ public class SimulationEngine {
      * signal state, and constants; writes nothing shared. Safe to run on any worker thread.
      */
     private List<VehicleUpdate> planChunk(LaneSlice slice, int from, int to,
-                                          SignalState signals, double stopLineS, double boxExitS, double dt) {
+                                          SignalState signals, double stopLineS, double boxExitS,
+                                          double greenRemainingSec, double clearanceSec, double dt) {
         List<VehicleUpdate> out = new ArrayList<>(to - from);
         SignalColor color = signals.colorFor(slice.laneId.approach(), slice.laneId.movement());
         for (int i = from; i < to; i++) {
@@ -421,12 +467,16 @@ public class SimulationEngine {
                     double stopDist = (v * v) / (2.0 * type.comfortDecel());
                     mustStop = distToStop >= stopDist; // enough room -> stop, else proceed
                 }
-                // "Don't block the box": on green, enter only if the vehicle can fully clear the
-                // intersection (its leader has passed the box exit). This makes gridlock
-                // impossible at any density - the box always drains - and guarantees it is empty
-                // during all-red, so cross traffic can never meet a stranded vehicle.
-                if (!mustStop && hasLeader && leaderRearNow < boxExitS + SAFE_BACKSTOP) {
-                    mustStop = true;
+                // Time-gate ("don't block the box"): on green, enter the intersection only if the
+                // vehicle can fully clear it before cross traffic gets green - that is, before the
+                // current green ends plus the yellow + all-red clearance. This lets a whole queue
+                // stream through during green (high throughput) while guaranteeing the box is empty
+                // when the conflicting phase starts, so gridlock and cross-collisions are impossible.
+                if (!mustStop && color == SignalColor.GREEN) {
+                    double clearTime = (boxExitS - stopLineS) / CLEAR_SPEED_EST;
+                    if (clearTime > greenRemainingSec + clearanceSec) {
+                        mustStop = true; // not enough time to clear; hold at the line
+                    }
                 }
             }
 

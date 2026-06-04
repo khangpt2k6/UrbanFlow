@@ -38,6 +38,11 @@ public class SignalController {
     private final AtomicReference<Approach> preemptRequest = new AtomicReference<>(null);
     private final AtomicReference<SignalState> state;
 
+    /** Timing the engine needs to gate box entry: time left on the current green, and the
+     *  yellow+all-red clearance that follows it. */
+    public record PhaseTiming(double greenRemainingSec, double clearanceSec) {}
+    private final AtomicReference<PhaseTiming> timing = new AtomicReference<>(new PhaseTiming(0, 5));
+
     // Machine state, mutated only on the signal thread.
     private int ringIndex = 0;
     private GreenGroup current;
@@ -57,6 +62,7 @@ public class SignalController {
                 group("EW_LEFT", false, mv(Approach.EAST, Movement.LEFT), mv(Approach.WEST, Movement.LEFT)));
         this.current = ring.get(0);
         this.state = new AtomicReference<>(buildState());
+        this.timing.set(computeTiming());
     }
 
     private static Mv mv(Approach a, Movement m) {
@@ -85,6 +91,19 @@ public class SignalController {
         return state.get();
     }
 
+    public PhaseTiming phaseTiming() {
+        return timing.get();
+    }
+
+    private PhaseTiming computeTiming() {
+        double greenRemaining = 0;
+        if (sub == Sub.GREEN) {
+            double dur = greenDurationMs();
+            greenRemaining = dur == Double.POSITIVE_INFINITY ? 999.0 : Math.max(0.0, (dur - subElapsedMs) / 1000.0);
+        }
+        return new PhaseTiming(greenRemaining, controls.getYellowSeconds() + controls.getAllRedSeconds());
+    }
+
     /**
      * Advance the machine to absolute simulation time {@code simNowMs}. Called repeatedly on
      * the signal thread; the first call only seeds the clock.
@@ -94,6 +113,7 @@ public class SignalController {
             lastSimMs = simNowMs;
             initialized = true;
             state.set(buildState());
+            timing.set(computeTiming());
             return;
         }
         long delta = simNowMs - lastSimMs;
@@ -103,6 +123,7 @@ public class SignalController {
         }
         step(delta);
         state.set(buildState());
+        timing.set(computeTiming());
     }
 
     private void step(double dtMs) {

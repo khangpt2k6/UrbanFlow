@@ -1,26 +1,50 @@
 import type { SignalColor, SignalState, VehicleView } from '../types/snapshot';
-import { LAYOUT, roadHalfWidthM, worldToScreen, type View } from './layout';
+import { CROSSWALK_DEPTH, LAYOUT, STOP_SETBACK, roadHalfWidthM, worldToScreen, type View } from './layout';
 import { typeInfo } from './vehicleTypes';
 
-// Bright, cartoon palette: grassy ground, gray roads, bold white markings.
+// Bright, cartoon palette.
 const C = {
-  bg: '#bfe3b0', // grass
-  bg2: '#b2dba2',
-  road: '#6b7280', // asphalt
+  bg: '#bfe3b0',
+  bg2: '#aed79c',
+  road: '#6b7280',
   box: '#787f8c',
   roadEdge: '#565d6b',
-  center: '#ffd23f', // bold yellow center line
+  center: '#ffd23f',
   divider: 'rgba(255,255,255,0.75)',
   stopLine: '#ffffff',
   crosswalk: '#ffffff',
-  shadow: 'rgba(30,40,30,0.28)',
-  stroke: 'rgba(28,32,40,0.6)', // cartoon vehicle outline
-  housing: '#2b2f38',
-  housingEdge: '#11141a',
+  shadow: 'rgba(30,40,30,0.30)',
+  stroke: 'rgba(28,32,40,0.6)',
+  housing: '#23262e',
+  housingEdge: '#0d0f14',
 };
 
 const ASPECT: Record<SignalColor, string> = { GREEN: '#28d17c', YELLOW: '#ffcf33', RED: '#ff5a52' };
 const ASPECT_DIM: Record<SignalColor, string> = { GREEN: '#1c3a2a', YELLOW: '#3d3520', RED: '#3e2220' };
+
+// Vehicle sprites from /public. `forward` is the direction the artwork points.
+// All sprites in /public are drawn top-down facing RIGHT (front on the +x side).
+const SPRITES: Record<number, { src: string; forward: 'up' | 'right' }> = {
+  2: { src: '/car_blue.webp', forward: 'right' },
+  3: { src: '/car_red.webp', forward: 'right' },
+  4: { src: '/car_blue.webp', forward: 'right' }, // van
+  5: { src: '/bus.png', forward: 'right' },
+  6: { src: '/truck.png', forward: 'right' },
+  7: { src: '/ambulance.png', forward: 'right' },
+  8: { src: '/truck.png', forward: 'right' }, // fire truck
+};
+const spriteCache: Record<string, HTMLImageElement> = {};
+function getSprite(src: string): HTMLImageElement {
+  let img = spriteCache[src];
+  if (!img) {
+    img = new Image();
+    img.src = src;
+    spriteCache[src] = img;
+  }
+  return img;
+}
+// warm the cache immediately
+for (const k of Object.keys(SPRITES)) getSprite(SPRITES[Number(k)].src);
 
 export function drawScene(
   ctx: CanvasRenderingContext2D,
@@ -31,13 +55,13 @@ export function drawScene(
   signals: SignalState | null,
   nowMs: number,
 ) {
-  // soft grass gradient
   const g = ctx.createLinearGradient(0, 0, 0, canvasH);
   g.addColorStop(0, C.bg);
   g.addColorStop(1, C.bg2);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, canvasW, canvasH);
 
+  drawScenery(ctx, view);
   drawRoads(ctx, view);
   drawCrosswalks(ctx, view);
   drawLaneMarkings(ctx, view);
@@ -46,6 +70,81 @@ export function drawScene(
   if (signals) drawSignals(ctx, view, signals);
 }
 
+// ----------------------------------------------------------------- scenery
+function drawScenery(ctx: CanvasRenderingContext2D, view: View) {
+  // Houses / buildings (x, y, w, h, color).
+  const buildings: [number, number, number, number, string][] = [
+    [32, 42, 16, 22, '#6f93c9'], [56, 27, 14, 16, '#e0a93b'],
+    [34, -40, 16, 26, '#9aa7b8'], [57, -25, 14, 16, '#d98b6a'],
+    [-36, -30, 30, 14, '#c98a5a'], [-25, 24, 12, 12, '#d98b6a'],
+  ];
+  for (const [x, y, w, h, c] of buildings) drawBuilding(ctx, view, x, y, w, h, c);
+
+  drawPond(ctx, view, -44, 44, 36, 24);
+
+  const trees: [number, number][] = [
+    [22, 62], [46, 56], [64, 44], [24, -58], [48, -52], [64, -40],
+    [-26, -56], [-56, -44], [-58, 56], [-30, 60],
+  ];
+  for (const [x, y] of trees) drawTree(ctx, view, x, y);
+}
+
+function drawBuilding(ctx: CanvasRenderingContext2D, view: View, x: number, y: number, w: number, h: number, color: string) {
+  const [sx, sy] = worldToScreen(x, y, view);
+  const wp = w * view.scale;
+  const hp = h * view.scale;
+  ctx.save();
+  ctx.translate(sx - wp / 2, sy - hp / 2);
+  // shadow
+  ctx.fillStyle = 'rgba(30,40,30,0.18)';
+  roundRect(ctx, 4, 6, wp, hp, 3); ctx.fill();
+  // body
+  ctx.fillStyle = color;
+  roundRect(ctx, 0, 0, wp, hp, 3); ctx.fill();
+  ctx.strokeStyle = C.stroke; ctx.lineWidth = 1.5; ctx.stroke();
+  // roof strip
+  ctx.fillStyle = shade(color, -0.22);
+  roundRect(ctx, 0, 0, wp, Math.max(4, hp * 0.16), 3); ctx.fill();
+  // windows
+  ctx.fillStyle = 'rgba(255,247,214,0.92)';
+  const m = Math.max(3, wp * 0.12);
+  const cols = Math.max(2, Math.floor((wp - m) / (m * 1.6)));
+  const rows = Math.max(2, Math.floor((hp - hp * 0.2 - m) / (m * 1.6)));
+  const gx = (wp - m) / cols;
+  const gy = (hp - hp * 0.2 - m) / rows;
+  for (let r = 0; r < rows; r++)
+    for (let cc = 0; cc < cols; cc++)
+      roundRect(ctx, m / 2 + cc * gx + gx * 0.18, hp * 0.2 + m / 2 + r * gy + gy * 0.18, gx * 0.5, gy * 0.5, 1), ctx.fill();
+  ctx.restore();
+}
+
+function drawTree(ctx: CanvasRenderingContext2D, view: View, x: number, y: number) {
+  const [sx, sy] = worldToScreen(x, y, view);
+  const r = Math.max(5, 3.2 * view.scale);
+  // shadow
+  ctx.fillStyle = 'rgba(30,40,30,0.16)';
+  ctx.beginPath(); ctx.ellipse(sx + 3, sy + r * 0.7, r * 1.05, r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+  // trunk
+  ctx.fillStyle = '#8d6e63';
+  roundRect(ctx, sx - r * 0.16, sy, r * 0.32, r * 0.9, 1); ctx.fill();
+  // canopy (two blobs)
+  ctx.fillStyle = '#4fb15a';
+  ctx.beginPath(); ctx.arc(sx - r * 0.4, sy - r * 0.2, r * 0.8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#62c46c';
+  ctx.beginPath(); ctx.arc(sx + r * 0.25, sy - r * 0.4, r * 0.85, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(28,60,30,0.35)'; ctx.lineWidth = 1; ctx.stroke();
+}
+
+function drawPond(ctx: CanvasRenderingContext2D, view: View, x: number, y: number, w: number, h: number) {
+  const [sx, sy] = worldToScreen(x, y, view);
+  ctx.fillStyle = '#5aa9e6';
+  ctx.beginPath(); ctx.ellipse(sx, sy, w * view.scale / 2, h * view.scale / 2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#3d8fce'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath(); ctx.ellipse(sx - w * view.scale * 0.18, sy - h * view.scale * 0.18, w * view.scale * 0.18, h * view.scale * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+}
+
+// ----------------------------------------------------------------- roads
 function drawRoads(ctx: CanvasRenderingContext2D, view: View) {
   const rh = roadHalfWidthM();
   const far = LAYOUT.approachLength + LAYOUT.half;
@@ -62,7 +161,7 @@ function drawRoads(ctx: CanvasRenderingContext2D, view: View) {
 function drawCrosswalks(ctx: CanvasRenderingContext2D, view: View) {
   const rh = roadHalfWidthM();
   const h = LAYOUT.half;
-  const depth = 4.5;
+  const depth = CROSSWALK_DEPTH;
   const stripeW = 0.8;
   const pitch = 1.5;
   ctx.fillStyle = C.crosswalk;
@@ -81,11 +180,8 @@ function drawLaneMarkings(ctx: CanvasRenderingContext2D, view: View) {
   const h = LAYOUT.half;
   ctx.strokeStyle = C.center;
   ctx.lineWidth = Math.max(1.5, 0.3 * view.scale);
-  line(ctx, view, 0, h, 0, far);
-  line(ctx, view, 0, -h, 0, -far);
-  line(ctx, view, h, 0, far, 0);
-  line(ctx, view, -h, 0, -far, 0);
-
+  line(ctx, view, 0, h, 0, far); line(ctx, view, 0, -h, 0, -far);
+  line(ctx, view, h, 0, far, 0); line(ctx, view, -h, 0, -far, 0);
   ctx.strokeStyle = C.divider;
   ctx.lineWidth = Math.max(1, 0.16 * view.scale);
   ctx.setLineDash([1.6 * view.scale, 1.9 * view.scale]);
@@ -102,7 +198,7 @@ function drawLaneMarkings(ctx: CanvasRenderingContext2D, view: View) {
 function drawStopLines(ctx: CanvasRenderingContext2D, view: View) {
   const rh = roadHalfWidthM();
   const h = LAYOUT.half;
-  const d = 5;
+  const d = STOP_SETBACK; // behind the crosswalk
   ctx.strokeStyle = C.stopLine;
   ctx.lineWidth = Math.max(2, 0.6 * view.scale);
   line(ctx, view, -rh, h + d, 0, h + d);
@@ -111,47 +207,43 @@ function drawStopLines(ctx: CanvasRenderingContext2D, view: View) {
   line(ctx, view, -h - d, -rh, -h - d, 0);
 }
 
-/**
- * Classic, unmistakable traffic lights: a 3-aspect head (red / amber / green) governs the
- * through+right movements, and a left-turn arrow governs protected left turns. The active bulb
- * glows; the others are shown dim. Green circle = go straight; green arrow = turn left; red = stop.
- */
+// ----------------------------------------------------------------- signals
 function drawSignals(ctx: CanvasRenderingContext2D, view: View, signals: SignalState) {
   const h = LAYOUT.half;
   const rh = roadHalfWidthM();
-  const heads: { ax: 'NORTH' | 'SOUTH' | 'EAST' | 'WEST'; x: number; y: number }[] = [
-    { ax: 'NORTH', x: -rh - 7, y: h + 8 },
-    { ax: 'SOUTH', x: rh + 7, y: -h - 8 },
-    { ax: 'EAST', x: h + 8, y: rh + 7 },
-    { ax: 'WEST', x: -h - 8, y: -rh - 7 },
+  // N/S heads read horizontally; E/W heads read vertically (matches real layout).
+  const heads: { ax: 'NORTH' | 'SOUTH' | 'EAST' | 'WEST'; x: number; y: number; horizontal: boolean }[] = [
+    { ax: 'NORTH', x: -rh - 8, y: h + 9, horizontal: true },
+    { ax: 'SOUTH', x: rh + 8, y: -h - 9, horizontal: true },
+    { ax: 'EAST', x: h + 9, y: rh + 8, horizontal: false },
+    { ax: 'WEST', x: -h - 9, y: -rh - 8, horizontal: false },
   ];
   const R = Math.max(3.5, 1.0 * view.scale);
   const gap = R * 0.55;
   const pad = R * 0.7;
-
   for (const head of heads) {
     const [cx, cy] = worldToScreen(head.x, head.y, view);
     const through = signals.through[head.ax];
     const left = signals.left[head.ax];
-
-    const w = R * 2 + pad * 2;
-    const hgt = R * 8 + gap * 3 + pad * 2; // 3 circles + 1 arrow
-    // housing
+    const longSide = R * 8 + gap * 3 + pad * 2; // 3 circles + arrow
+    const shortSide = R * 2 + pad * 2;
+    const w = head.horizontal ? longSide : shortSide;
+    const hgt = head.horizontal ? shortSide : longSide;
     ctx.fillStyle = C.housing;
     ctx.strokeStyle = C.housingEdge;
     ctx.lineWidth = 1.5;
     roundRect(ctx, cx - w / 2, cy - hgt / 2, w, hgt, R * 0.7);
-    ctx.fill();
-    ctx.stroke();
+    ctx.fill(); ctx.stroke();
 
-    let y = cy - hgt / 2 + pad + R;
-    aspect(ctx, cx, y, R, 'RED', through);
-    y += 2 * R + gap;
-    aspect(ctx, cx, y, R, 'YELLOW', through);
-    y += 2 * R + gap;
-    aspect(ctx, cx, y, R, 'GREEN', through);
-    y += 2 * R + gap;
-    leftArrow(ctx, cx, y, R, left);
+    // positions of the 4 bulbs along the long axis
+    const start = head.horizontal ? cx - w / 2 + pad + R : cy - hgt / 2 + pad + R;
+    const step = 2 * R + gap;
+    const pos = [start, start + step, start + 2 * step, start + 3 * step];
+    const at = (p: number): [number, number] => head.horizontal ? [p, cy] : [cx, p];
+    aspect(ctx, ...at(pos[0]), R, 'RED', through);
+    aspect(ctx, ...at(pos[1]), R, 'YELLOW', through);
+    aspect(ctx, ...at(pos[2]), R, 'GREEN', through);
+    leftArrow(ctx, ...at(pos[3]), R, left, head.ax);
   }
 }
 
@@ -165,24 +257,31 @@ function aspect(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, 
   ctx.shadowBlur = 0;
 }
 
-function leftArrow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, left: SignalColor) {
+function leftArrow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, left: SignalColor, ax: string) {
   const on = left !== 'RED';
   const color = on ? ASPECT[left] : ASPECT_DIM.GREEN;
+  ctx.save();
+  ctx.translate(x, y);
+  // point the arrow toward the approach's left-turn direction (just a visual cue)
+  const rot: Record<string, number> = { NORTH: 0, SOUTH: Math.PI, EAST: -Math.PI / 2, WEST: Math.PI / 2 };
+  ctx.rotate(rot[ax] ?? 0);
   ctx.fillStyle = color;
   if (on) { ctx.shadowColor = color; ctx.shadowBlur = 12; }
   ctx.beginPath();
-  ctx.moveTo(x - r, y);            // tip points left
-  ctx.lineTo(x + r * 0.5, y - r);
-  ctx.lineTo(x + r * 0.5, y - r * 0.4);
-  ctx.lineTo(x + r, y - r * 0.4);
-  ctx.lineTo(x + r, y + r * 0.4);
-  ctx.lineTo(x + r * 0.5, y + r * 0.4);
-  ctx.lineTo(x + r * 0.5, y + r);
+  ctx.moveTo(-r, 0);
+  ctx.lineTo(r * 0.5, -r);
+  ctx.lineTo(r * 0.5, -r * 0.4);
+  ctx.lineTo(r, -r * 0.4);
+  ctx.lineTo(r, r * 0.4);
+  ctx.lineTo(r * 0.5, r * 0.4);
+  ctx.lineTo(r * 0.5, r);
   ctx.closePath();
   ctx.fill();
+  ctx.restore();
   ctx.shadowBlur = 0;
 }
 
+// ----------------------------------------------------------------- vehicles
 function drawVehicle(ctx: CanvasRenderingContext2D, view: View, v: VehicleView, nowMs: number) {
   const info = typeInfo(v.t);
   const [fx, fy] = worldToScreen(v.x, v.y, view);
@@ -190,102 +289,58 @@ function drawVehicle(ctx: CanvasRenderingContext2D, view: View, v: VehicleView, 
   const dx = fx - rxs;
   const dy = fy - rys;
   const chord = Math.hypot(dx, dy);
+  const ang = chord > 0.5 ? Math.atan2(dy, dx) : -v.h;
+  const cx = (fx + rxs) / 2;
+  const cy = (fy + rys) / 2;
+  const lengthPx = info.length * view.scale * 1.25;
+
+  const desc = SPRITES[v.t];
+  if (desc) {
+    const img = getSprite(desc.src);
+    if (img.complete && img.naturalWidth > 0) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      if (desc.forward === 'right') {
+        ctx.rotate(ang);
+        const s = lengthPx / img.naturalWidth;
+        ctx.drawImage(img, -lengthPx / 2, -(img.naturalHeight * s) / 2, lengthPx, img.naturalHeight * s);
+      } else {
+        ctx.rotate(ang + Math.PI / 2);
+        const s = lengthPx / img.naturalHeight;
+        ctx.drawImage(img, -(img.naturalWidth * s) / 2, -lengthPx / 2, img.naturalWidth * s, lengthPx);
+      }
+      ctx.restore();
+      return;
+    }
+  }
+
+  // drawn fallback: bicycle / motorcycle, and any sprite still loading
   const W = Math.max(3.5, info.width * view.scale);
   const L = Math.max(W * 1.1, chord);
   const r = Math.min(4, W / 2.2);
-  const ang = chord > 0.5 ? Math.atan2(dy, dx) : -v.h;
-
   ctx.save();
   ctx.translate(fx, fy);
   ctx.rotate(ang);
-
   ctx.save();
   ctx.translate(W * 0.14, W * 0.2);
   ctx.fillStyle = C.shadow;
-  roundRect(ctx, -L, -W / 2, L, W, r);
-  ctx.fill();
+  roundRect(ctx, -L, -W / 2, L, W, r); ctx.fill();
   ctx.restore();
-
-  if (info.emergency) drawEmergency(ctx, v.t, L, W, r, nowMs);
-  else if (v.t === 0 || v.t === 1) drawTwoWheeler(ctx, info.color, L, W, r);
-  else drawCar(ctx, info.color, L, W, r);
-
+  if (v.t === 0 || v.t === 1) drawTwoWheeler(ctx, info.color, L, W, r);
+  else { ctx.fillStyle = info.color; roundRect(ctx, -L, -W / 2, L, W, r); ctx.fill(); ctx.strokeStyle = C.stroke; ctx.lineWidth = Math.max(1, W * 0.07); ctx.stroke(); }
   ctx.restore();
-}
-
-function bodyStroke(ctx: CanvasRenderingContext2D, L: number, W: number, r: number) {
-  ctx.strokeStyle = C.stroke;
-  ctx.lineWidth = Math.max(1, W * 0.07);
-  roundRect(ctx, -L, -W / 2, L, W, r);
-  ctx.stroke();
-}
-
-function drawCar(ctx: CanvasRenderingContext2D, color: string, L: number, W: number, r: number) {
-  ctx.fillStyle = color;
-  roundRect(ctx, -L, -W / 2, L, W, r);
-  ctx.fill();
-  bodyStroke(ctx, L, W, r);
-  ctx.fillStyle = shade(color, -0.24);
-  roundRect(ctx, -L * 0.72, -W * 0.36, L * 0.44, W * 0.72, r * 0.7);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(232,242,255,0.9)';
-  roundRect(ctx, -L * 0.34, -W * 0.3, L * 0.12, W * 0.6, 1);
-  ctx.fill();
-  ctx.fillStyle = '#fff7da';
-  roundRect(ctx, -2, -W / 2 + 1.5, 2, W * 0.18, 1);
-  roundRect(ctx, -2, W / 2 - 1.5 - W * 0.18, 2, W * 0.18, 1);
-  ctx.fill();
+  void nowMs;
 }
 
 function drawTwoWheeler(ctx: CanvasRenderingContext2D, color: string, L: number, W: number, r: number) {
   ctx.fillStyle = color;
-  roundRect(ctx, -L, -W / 2, L, W, r);
-  ctx.fill();
-  bodyStroke(ctx, L, W, r);
+  roundRect(ctx, -L, -W / 2, L, W, r); ctx.fill();
+  ctx.strokeStyle = C.stroke; ctx.lineWidth = Math.max(1, W * 0.08); ctx.stroke();
   ctx.fillStyle = shade(color, -0.4);
-  ctx.beginPath();
-  ctx.arc(-L * 0.45, 0, Math.max(1.6, W * 0.4), 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(-L * 0.45, 0, Math.max(1.6, W * 0.4), 0, Math.PI * 2); ctx.fill();
 }
 
-function drawEmergency(ctx: CanvasRenderingContext2D, t: number, L: number, W: number, r: number, nowMs: number) {
-  const isAmbulance = t === 7;
-  if (isAmbulance) {
-    ctx.fillStyle = '#fbfbfb';
-    roundRect(ctx, -L, -W / 2, L, W, r); ctx.fill();
-    bodyStroke(ctx, L, W, r);
-    ctx.fillStyle = '#ff5a52';
-    roundRect(ctx, -L, -W * 0.12, L, W * 0.24, 0); ctx.fill();
-    ctx.fillStyle = '#ff5a52';
-    const cx = -L * 0.78; const a = Math.max(2.2, W * 0.34);
-    roundRect(ctx, cx - a / 6, -a / 2, a / 3, a, 1);
-    roundRect(ctx, cx - a / 2, -a / 6, a, a / 3, 1);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(120,140,160,0.5)';
-    roundRect(ctx, -L * 0.22, -W * 0.34, L * 0.14, W * 0.68, 1); ctx.fill();
-  } else {
-    ctx.fillStyle = '#e23b34';
-    roundRect(ctx, -L, -W / 2, L, W, r); ctx.fill();
-    bodyStroke(ctx, L, W, r);
-    ctx.fillStyle = shade('#e23b34', -0.28);
-    roundRect(ctx, -L * 0.28, -W / 2, L * 0.28, W, r * 0.7); ctx.fill();
-    ctx.strokeStyle = '#dbe3ea'; ctx.lineWidth = Math.max(1, W * 0.12);
-    line2(ctx, -L * 0.85, -W * 0.18, -L * 0.32, -W * 0.18);
-    ctx.fillStyle = 'rgba(232,242,255,0.6)';
-    roundRect(ctx, -L * 0.2, -W * 0.32, L * 0.1, W * 0.64, 1); ctx.fill();
-  }
-  const phase = Math.floor(nowMs / 180) % 2 === 0;
-  const barX = -L * 0.16;
-  ctx.fillStyle = phase ? '#ff5a52' : '#3b82f6';
-  ctx.shadowColor = phase ? '#ff5a52' : '#3b82f6'; ctx.shadowBlur = 10;
-  roundRect(ctx, barX, -W * 0.3, Math.max(2, L * 0.08), W * 0.26, 1); ctx.fill();
-  ctx.fillStyle = phase ? '#3b82f6' : '#ff5a52';
-  ctx.shadowColor = phase ? '#3b82f6' : '#ff5a52';
-  roundRect(ctx, barX, W * 0.04, Math.max(2, L * 0.08), W * 0.26, 1); ctx.fill();
-  ctx.shadowBlur = 0;
-}
-
-// ---- helpers ----
+// ----------------------------------------------------------------- helpers
 function shade(hex: string, amt: number): string {
   const m = hex.replace('#', '');
   const n = parseInt(m.length === 3 ? m.replace(/(.)/g, '$1$1') : m, 16);
@@ -305,10 +360,6 @@ function line(ctx: CanvasRenderingContext2D, view: View, x0: number, y0: number,
   const [ax, ay] = worldToScreen(x0, y0, view);
   const [bx, by] = worldToScreen(x1, y1, view);
   ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-}
-
-function line2(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number) {
-  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {

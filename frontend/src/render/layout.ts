@@ -9,6 +9,11 @@ export const LAYOUT = {
   lanesPerSide: 3, // inbound (and outbound) lanes per approach
 };
 
+/** Crosswalk band depth just outside the box (meters). Mirrors the backend rendering intent. */
+export const CROSSWALK_DEPTH = 4.5;
+/** Distance vehicles stop back from the box edge (mirrors backend IntersectionLayout.STOP_SETBACK). */
+export const STOP_SETBACK = 6.5;
+
 /** Full world extent in meters (far edge to far edge). */
 export const WORLD_SPAN = 2 * (LAYOUT.approachLength + LAYOUT.half);
 

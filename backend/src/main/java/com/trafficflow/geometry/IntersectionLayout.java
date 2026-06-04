@@ -144,8 +144,16 @@ public final class IntersectionLayout {
         return List.copyOf(inboundPaths.keySet());
     }
 
-    /** Arc length at which any lane reaches its stop line. */
+    /** Vehicles halt this far back from the box edge, leaving the crosswalk clear (meters). */
+    public static final double STOP_SETBACK = 6.5;
+
+    /** Arc length of the stop line: set back from the box edge so the crosswalk stays clear. */
     public double stopLineS() {
+        return approachLength - STOP_SETBACK;
+    }
+
+    /** Arc length of the intersection box edge (where conflicting paths begin). */
+    public double boxEntryS() {
         return approachLength;
     }
 

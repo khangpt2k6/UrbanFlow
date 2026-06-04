@@ -13,28 +13,30 @@ export default function SimView({ onExit }: Props) {
 
   return (
     <div className="sim">
-      <div className="sim-canvas">
-        <CanvasView
-          latestRef={stream.latestRef}
-          prevRef={stream.prevRef}
-          lastArrivalRef={stream.lastArrivalRef}
-          intervalRef={stream.intervalRef}
-        />
+      <div className="stage">
+        <div className="statusbar">
+          <span className="brand" onClick={onExit} title="Back to start">
+            Traffic<span>Flow</span>
+          </span>
+          <span className={`status-pill ${stream.connected ? 'on' : 'off'}`}>
+            {stream.connected ? 'Server connected · WebSocket active' : 'Connecting…'}
+          </span>
+        </div>
+        <div className="sim-canvas">
+          <CanvasView
+            latestRef={stream.latestRef}
+            prevRef={stream.prevRef}
+            lastArrivalRef={stream.lastArrivalRef}
+            intervalRef={stream.intervalRef}
+          />
+        </div>
+        <AlertsFeed alerts={stream.alerts} />
       </div>
 
-      <div className="brand-float" onClick={onExit} title="Back to start">
-        Traffic<span>Flow</span>
-      </div>
-
-      <div className="float control-float">
+      <aside className="panel-col">
         <ControlPanel send={stream.send} connected={stream.connected} />
-      </div>
-
-      <div className="float stats-float">
         <StatsPanel stats={stream.stats} connected={stream.connected} />
-      </div>
-
-      <AlertsFeed alerts={stream.alerts} />
+      </aside>
     </div>
   );
 }

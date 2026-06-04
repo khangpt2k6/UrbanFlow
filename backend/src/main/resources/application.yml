@@ -13,7 +13,7 @@ simulation:
   # Target number of concurrent vehicles (density default). 70+ is supported via the control
   # panel; the default is kept under the intersection's saturation point so traffic flows
   # visibly rather than standing in queues.
-  target-vehicles: 30
+  target-vehicles: 45
   # Approach length in meters (from approach edge to stop line).
   approach-length-m: 120.0
   # Lane width in meters.

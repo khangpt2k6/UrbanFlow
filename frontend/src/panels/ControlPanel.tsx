@@ -40,7 +40,8 @@ function Slider({ label, min, max, step, value, unit, onChange }: SliderProps) {
 
 export default function ControlPanel({ send, connected }: Props) {
   const [speed, setSpeed] = useState(1);
-  const [density, setDensity] = useState(30);
+  const [density, setDensity] = useState(45);
+  const [mode, setMode] = useState('avg');
   const [nsGreen, setNsGreen] = useState(15);
   const [ewGreen, setEwGreen] = useState(15);
   const [leftGreen, setLeftGreen] = useState(5);
@@ -49,6 +50,17 @@ export default function ControlPanel({ send, connected }: Props) {
   const [approach, setApproach] = useState('NORTH');
   const [paused, setPaused] = useState(false);
   const [showSignals, setShowSignals] = useState(false);
+
+  const MODES = [
+    { key: 'off', label: 'Sparse', icon: '🌙', density: 15 },
+    { key: 'avg', label: 'Normal', icon: '🏙️', density: 45 },
+    { key: 'rush', label: 'Rush Hour', icon: '🚦', density: 90 },
+  ];
+  const applyMode = (m: { key: string; density: number }) => {
+    setMode(m.key);
+    setDensity(m.density);
+    send({ type: 'setDensity', count: m.density });
+  };
 
   const dur = (phase: string, seconds: number) => send({ type: 'setSignalDuration', phase, seconds });
   const togglePause = () => {
@@ -67,7 +79,16 @@ export default function ControlPanel({ send, connected }: Props) {
       <Slider label="Speed" min={0.25} max={4} step={0.25} value={speed} unit="x"
         onChange={(v) => { setSpeed(v); send({ type: 'setSpeed', value: v }); }} />
       <Slider label="Density" min={0} max={120} step={1} value={density}
-        onChange={(v) => { setDensity(v); send({ type: 'setDensity', count: v }); }} />
+        onChange={(v) => { setDensity(v); setMode(''); send({ type: 'setDensity', count: v }); }} />
+
+      <div className="modes">
+        {MODES.map((m) => (
+          <button key={m.key} className={`mode-btn ${mode === m.key ? 'active' : ''}`} onClick={() => applyMode(m)}>
+            <span className="mode-icon">{m.icon}</span>
+            {m.label}
+          </button>
+        ))}
+      </div>
 
       <div className="emergency-row">
         <select value={approach} onChange={(e) => setApproach(e.target.value)}>
