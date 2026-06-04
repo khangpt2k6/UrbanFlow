@@ -51,10 +51,12 @@
 }
 .welcome-title {
   font-size: clamp(48px, 9vw, 100px); font-weight: 900; letter-spacing: -2px; margin: 0 0 16px; line-height: 1;
-  background: linear-gradient(120deg, #2f6df6 10%, #18a558 90%);
+  background: linear-gradient(120deg, #2f6df6 0%, #18a558 35%, #2f6df6 70%, #18a558 100%);
+  background-size: 220% auto;
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  animation: fadeInUp 0.6s ease 0.05s both;
+  animation: fadeInUp 0.6s ease 0.05s both, shimmer 5s linear infinite;
 }
+@keyframes shimmer { to { background-position: 220% center; } }
 .welcome-title span { -webkit-text-fill-color: transparent; }
 .welcome-tag { color: #4b5563; font-size: 17px; line-height: 1.6; max-width: 560px; margin: 0 auto 32px; animation: fadeInUp 0.6s ease 0.12s both; }
 .welcome-stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-bottom: 36px; animation: fadeInUp 0.6s ease 0.18s both; }

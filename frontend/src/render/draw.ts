@@ -161,11 +161,47 @@ function drawScenery(ctx: CanvasRenderingContext2D, view: View) {
 
   drawPond(ctx, view, -44, 44, 36, 24);
 
-  const trees: [number, number][] = [
-    [22, 62], [46, 56], [64, 44], [24, -58], [48, -52], [64, -40],
-    [-26, -56], [-56, -44], [-58, 56], [-30, 60],
+  // Lots of trees of varied sizes for a lush, park-like feel.
+  const trees: [number, number, number][] = [
+    [22, 62, 1.1], [40, 70, 0.8], [52, 58, 1.2], [64, 46, 0.9], [70, 64, 1.0], [30, 50, 0.7],
+    [24, -56, 1.1], [42, -64, 0.85], [54, -50, 1.2], [66, -42, 0.9], [72, -60, 1.0], [38, -48, 0.7],
+    [-24, -52, 1.1], [-42, -62, 0.9], [-54, -44, 1.2], [-64, -56, 0.85], [-30, -68, 1.0], [-70, -40, 0.8],
+    [-58, 56, 1.1], [-30, 60, 0.9], [-66, 38, 1.0], [-48, 66, 0.85], [-72, 60, 0.8], [-20, 70, 0.7],
   ];
-  for (const [x, y] of trees) drawTree(ctx, view, x, y);
+  for (const [x, y, s] of trees) drawTree(ctx, view, x, y, s);
+
+  // Bushes and flower clusters scatter green/colour across the lawns.
+  const bushes: [number, number][] = [
+    [16, 50], [60, 36], [44, -38], [20, -44], [-18, -40], [-48, -54], [-20, 52], [-60, 48], [70, 30], [-70, 28],
+  ];
+  for (const [x, y] of bushes) drawBush(ctx, view, x, y);
+  const flowers: [number, number][] = [
+    [18, 58], [50, 64], [28, -50], [58, -58], [-26, -60], [-52, 60], [-38, 52], [62, 52],
+  ];
+  for (const [x, y] of flowers) drawFlowers(ctx, view, x, y);
+}
+
+function drawBush(ctx: CanvasRenderingContext2D, view: View, x: number, y: number) {
+  const [sx, sy] = worldToScreen(x, y, view);
+  const r = Math.max(3, 1.8 * view.scale);
+  ctx.fillStyle = 'rgba(30,40,30,0.14)';
+  ctx.beginPath(); ctx.ellipse(sx + 2, sy + r * 0.5, r * 1.1, r * 0.45, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#56b863';
+  ctx.beginPath(); ctx.arc(sx - r * 0.5, sy, r * 0.7, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(sx + r * 0.5, sy, r * 0.7, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#67ca72';
+  ctx.beginPath(); ctx.arc(sx, sy - r * 0.3, r * 0.75, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawFlowers(ctx: CanvasRenderingContext2D, view: View, x: number, y: number) {
+  const [sx, sy] = worldToScreen(x, y, view);
+  const r = Math.max(1.5, 0.55 * view.scale);
+  const cols = ['#ff6b9d', '#ffd23f', '#ff8a5b', '#c77dff'];
+  const spots: [number, number][] = [[0, 0], [r * 2.4, r * 0.8], [r * 1.2, -r * 1.8], [-r * 1.8, r * 1.2], [-r * 1.4, -r * 1.4]];
+  spots.forEach((p, i) => {
+    ctx.fillStyle = cols[i % cols.length];
+    ctx.beginPath(); ctx.arc(sx + p[0], sy + p[1], r, 0, Math.PI * 2); ctx.fill();
+  });
 }
 
 function drawBuilding(ctx: CanvasRenderingContext2D, view: View, x: number, y: number, w: number, h: number, color: string) {
@@ -197,9 +233,9 @@ function drawBuilding(ctx: CanvasRenderingContext2D, view: View, x: number, y: n
   ctx.restore();
 }
 
-function drawTree(ctx: CanvasRenderingContext2D, view: View, x: number, y: number) {
+function drawTree(ctx: CanvasRenderingContext2D, view: View, x: number, y: number, scale = 1) {
   const [sx, sy] = worldToScreen(x, y, view);
-  const r = Math.max(5, 3.2 * view.scale);
+  const r = Math.max(4, 3.2 * view.scale * scale);
   // shadow
   ctx.fillStyle = 'rgba(30,40,30,0.16)';
   ctx.beginPath(); ctx.ellipse(sx + 3, sy + r * 0.7, r * 1.05, r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
@@ -290,12 +326,17 @@ function drawStopLines(ctx: CanvasRenderingContext2D, view: View) {
 function drawSignals(ctx: CanvasRenderingContext2D, view: View, signals: SignalState) {
   const h = LAYOUT.half;
   const rh = roadHalfWidthM();
-  // N/S heads read horizontally; E/W heads read vertically (matches real layout).
+  // Tuck each head into the corner of the intersection: just off the road edge
+  // (lat), level with the stop line (along), on the approaching driver's right.
+  // Each head runs PARALLEL to its road so it hugs the curb instead of poking
+  // across the asphalt -> N/S heads are vertical, E/W heads are horizontal.
+  const lat = rh + 3; // a few metres onto the corner sidewalk, clear of the road
+  const along = h + STOP_SETBACK; // level with the stop line
   const heads: { ax: 'NORTH' | 'SOUTH' | 'EAST' | 'WEST'; x: number; y: number; horizontal: boolean }[] = [
-    { ax: 'NORTH', x: -rh - 8, y: h + 9, horizontal: true },
-    { ax: 'SOUTH', x: rh + 8, y: -h - 9, horizontal: true },
-    { ax: 'EAST', x: h + 9, y: rh + 8, horizontal: false },
-    { ax: 'WEST', x: -h - 9, y: -rh - 8, horizontal: false },
+    { ax: 'NORTH', x: -lat, y: along, horizontal: false },
+    { ax: 'SOUTH', x: lat, y: -along, horizontal: false },
+    { ax: 'EAST', x: along, y: lat, horizontal: true },
+    { ax: 'WEST', x: -along, y: -lat, horizontal: true },
   ];
   const R = Math.max(3.5, 1.0 * view.scale);
   const gap = R * 0.55;

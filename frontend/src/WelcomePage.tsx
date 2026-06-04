@@ -47,6 +47,14 @@ export default function WelcomePage({ onLaunch }: Props) {
 
         <div className="welcome-foot">Spring Boot · 30 threads · STOMP/WebSocket · React + Canvas</div>
       </div>
+
+      <div className="welcome-road">
+        <span className="w-veh" style={{ animationDelay: '0s' }}>🚗</span>
+        <span className="w-veh" style={{ animationDelay: '1.4s' }}>🚙</span>
+        <span className="w-veh" style={{ animationDelay: '2.8s' }}>🚌</span>
+        <span className="w-veh" style={{ animationDelay: '4.2s' }}>🚑</span>
+        <span className="w-veh" style={{ animationDelay: '5.4s' }}>🚓</span>
+      </div>
     </div>
   );
 }
