@@ -38,11 +38,14 @@ class IntersectionLayoutTest {
     }
 
     @Test
-    void stopLineSitsAtBoxEdge() {
-        // For NORTH-THROUGH the stop line is at y = +half on the west side of the centerline.
+    void stopLineSitsBehindTheBoxLeavingTheCrosswalkClear() {
+        // The box edge is at y = +half; the stop line is set back by STOP_SETBACK so vehicles
+        // halt before the crosswalk, and the box edge itself is at boxEntryS.
         LanePath p = layout.path(new LaneId(Approach.NORTH, Movement.THROUGH));
         Pose stop = p.poseAt(layout.stopLineS());
-        assertEquals(props.getIntersectionHalfM(), stop.y(), 1e-6);
+        Pose boxEdge = p.poseAt(layout.boxEntryS());
+        assertEquals(props.getIntersectionHalfM() + IntersectionLayout.STOP_SETBACK, stop.y(), 1e-6);
+        assertEquals(props.getIntersectionHalfM(), boxEdge.y(), 1e-6);
         assertTrue(stop.x() < 0, "north inbound lanes sit west of the centerline");
     }
 
