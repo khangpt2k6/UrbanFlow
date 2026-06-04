@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeView, worldToScreen, WORLD_SPAN } from '../src/render/layout';
+import { makeView, worldToScreen, VIEW_SPAN, WORLD_SPAN } from '../src/render/layout';
 
 describe('layout', () => {
   it('maps the world origin to the canvas center', () => {
@@ -16,10 +16,13 @@ describe('layout', () => {
     expect(yUp).toBeLessThan(yDown);
   });
 
-  it('fits the full world span within the smaller canvas dimension', () => {
-    const view = makeView(600, 600, 24);
-    const [right] = worldToScreen(WORLD_SPAN / 2, 0, view);
-    expect(right).toBeLessThanOrEqual(600);
-    expect(right).toBeGreaterThan(300);
+  it('fits the focused view span and zooms in past the full world', () => {
+    const view = makeView(600, 600, 0);
+    // The focused viewport edge lands at the canvas edge (the view fills the canvas).
+    const [viewEdge] = worldToScreen(VIEW_SPAN / 2, 0, view);
+    expect(viewEdge).toBeCloseTo(600, 0);
+    // The far edge of the full world is intentionally off-canvas (we are zoomed in).
+    const [worldEdge] = worldToScreen(WORLD_SPAN / 2, 0, view);
+    expect(worldEdge).toBeGreaterThan(600);
   });
 });
