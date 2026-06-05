@@ -506,11 +506,9 @@ function drawPedestrians(ctx: CanvasRenderingContext2D, view: View, signals: Sig
     for (const w of walkers) updateWalker(w, dt, dtMs, signals, vehicles);
     walkers = walkers.filter((w) => w.state !== 'DONE');
   }
-  for (const w of walkers) {
-    const moving = w.state === 'WALK' || w.state === 'CROSS';
-    const sway = moving ? Math.sin(nowMs * 0.011 + w.bob) * 0.35 : 0; // a little walking sway (draw-only)
-    drawPed(ctx, view, w.wx - w.fy * sway, w.wy + w.fx * sway, w.color, w.fx, w.fy);
-  }
+  // Draw each walker at its position, facing its travel direction. Straight legs, no weaving: a
+  // footpath leg or a crosswalk is a straight line and turns only ever happen at a corner.
+  for (const w of walkers) drawPed(ctx, view, w.wx, w.wy, w.color, w.fx, w.fy);
 }
 
 function drawPed(ctx: CanvasRenderingContext2D, view: View, x: number, y: number, color: string, dx = 0, dy = 0) {
@@ -666,26 +664,26 @@ function drawStopLines(ctx: CanvasRenderingContext2D, view: View) {
 function drawSignals(ctx: CanvasRenderingContext2D, view: View, signals: SignalState) {
   const h = LAYOUT.half;
   const rh = roadHalfWidthM();
-  // Sit each head at the corner where the white stop line meets the road's edge: hard against the
-  // kerb (lat) and level with the stop line (along), then pushed outward by half its length so the
-  // housing sits on the approach side of the line (not straddling the crosswalk), facing the
-  // stopped driver. N/S heads run vertical, E/W heads horizontal, parallel to their road.
-  const lat = rh + 1.4; // hard against the road edge / kerb
-  const along = h + STOP_SETBACK; // the white stop line
+  // Put each head ON the carriageway, hard against the approaching driver's near-right kerb, a
+  // couple of metres in front of the stop line (just past the crosswalk, facing the stopped cars).
+  // The light BAR runs PARALLEL to the white stop-line stripe - so N/S heads are horizontal and
+  // E/W heads vertical - and its near end hugs the kerb, the bar reaching a little onto the road.
+  const edge = rh;                          // carriageway kerb
+  const front = h + CROSSWALK_DEPTH + 1.0;  // just in front of the stop line, past the crosswalk
   const heads: { ax: 'NORTH' | 'SOUTH' | 'EAST' | 'WEST'; x: number; y: number; horizontal: boolean; ox: number; oy: number }[] = [
-    { ax: 'NORTH', x: -lat, y: along, horizontal: false, ox: 0, oy: -1 },
-    { ax: 'SOUTH', x: lat, y: -along, horizontal: false, ox: 0, oy: 1 },
-    { ax: 'EAST', x: along, y: lat, horizontal: true, ox: 1, oy: 0 },
-    { ax: 'WEST', x: -along, y: -lat, horizontal: true, ox: -1, oy: 0 },
+    { ax: 'NORTH', x: -edge, y: front, horizontal: true, ox: 1, oy: 0 },
+    { ax: 'SOUTH', x: edge, y: -front, horizontal: true, ox: -1, oy: 0 },
+    { ax: 'EAST', x: front, y: edge, horizontal: false, ox: 0, oy: 1 },
+    { ax: 'WEST', x: -front, y: -edge, horizontal: false, ox: 0, oy: -1 },
   ];
-  const R = Math.max(3, 0.64 * view.scale);
+  const R = Math.max(2.6, 0.5 * view.scale);
   const gap = R * 0.55;
   const pad = R * 0.7;
   const longSide = R * 8 + gap * 3 + pad * 2; // 3 circles + arrow
   const shortSide = R * 2 + pad * 2;
   for (const head of heads) {
     let [cx, cy] = worldToScreen(head.x, head.y, view);
-    cx += head.ox * (longSide / 2); // push the housing onto the approach side of the stop line
+    cx += head.ox * (longSide / 2); // hug the kerb: the bar's near end sits on the road edge
     cy += head.oy * (longSide / 2);
     const through = signals.through[head.ax];
     const left = signals.left[head.ax];
