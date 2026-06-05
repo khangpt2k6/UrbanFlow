@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/img/hero.png" alt="A live top-down intersection packed with cars, buses and ambulances" width="860">
+  <img src="docs/img/hero.png" alt="A live top-down smart-city intersection with cars, bike lanes, footpaths and blocks of towers" width="860">
 </p>
 
 <h1 align="center">UrbanFlow</h1>
@@ -37,7 +37,7 @@ So roughly thirty workers can all look at the road at once (because a photo can'
 
 ## The design
 
-I wanted it to feel like a friendly control room, not a spreadsheet. A bright, top-down cartoon town on the left, a calm panel of controls and live numbers on the right, and a little compass tucked in the corner so you always know which way is North.
+I wanted it to feel like a friendly control room, not a spreadsheet. A bright, top-down cartoon city on the left - dense blocks of towers, tree-lined footpaths and bike lanes around one busy crossing - a calm panel of controls and live numbers on the right, and a little compass tucked in the corner so you always know which way is North.
 
 <p align="center">
   <img src="docs/img/welcome.png" alt="The UrbanFlow welcome screen" width="720">
@@ -67,19 +67,11 @@ A watcher checks the whole road on every single heartbeat and confirms no two ve
 
 ---
 
-## A little living world
+## A little living city
 
-Nine kinds of vehicle, each drawn at its real size, from a bicycle up to a fire truck. They were the most fun part: getting a bus to feel heavy and a motorbike to feel nimble, and making sure nothing ever spills over its lane lines.
+Nine kinds of vehicle, from a bicycle up to a fire truck, each with its own size and feel: a bus is heavy and slow off the line, a motorbike is nimble, and nothing ever spills over its lane lines. When a car eases off and stops, its brake lights glow red, so a queue waiting at a light reads as patient rather than frozen.
 
-<p align="center">
-  <img src="docs/img/cars.png" alt="A row of different vehicles - cars, vans, a bus and motorbikes" width="780">
-</p>
-
-And because an empty grid is lonely, the town got trees, a pond, flowerbeds and little houses around the edges - a calm green backdrop for all the rushing.
-
-<p align="center">
-  <img src="docs/img/tree.png" alt="Trees, a bush and a pond on the grass beside the road" width="420">
-</p>
+And because a bare grid of roads is lonely, I grew a small **smart city** around the crossing: dense blocks of towers standing shoulder to shoulder, concrete footpaths, protected green bike lanes painted along the kerb, street trees, and people who stroll the pavements and wait at the corner to cross until their light turns. It is all hand-drawn on a canvas and laid out once from a fixed seed, so it never flickers and the same little world greets you every time.
 
 ---
 
