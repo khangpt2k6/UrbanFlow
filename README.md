@@ -4,8 +4,8 @@
 
 <h1>UrbanFlow</h1>
 
-<b>A tiny city intersection that comes alive in your browser.</b><br>
-Up to 120 cars, buses, vans and ambulances pour through one crossing in real time, and never crash.
+<b>120 cars through one intersection, in real time, with zero collisions.</b><br>
+A concurrent traffic-control engine in Java, streamed live to a React + Canvas city in the browser.
 
 <br><br>
 
@@ -16,26 +16,27 @@ Up to 120 cars, buses, vans and ambulances pour through one crossing in real tim
 <img alt="Vite" src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white">
 <img alt="WebSocket" src="https://img.shields.io/badge/STOMP-WebSocket-010101?logo=socketdotio&logoColor=white">
 
-<br><br>
-
-<table>
-<tr>
-<td align="center"><b>120</b><br><sub>vehicles</sub></td>
-<td align="center"><b>9</b><br><sub>kinds</sub></td>
-<td align="center"><b>24</b><br><sub>lanes</sub></td>
-<td align="center"><b>30</b><br><sub>threads</sub></td>
-<td align="center"><b>2,000+</b><br><sub>updates / sec</sub></td>
-<td align="center"><b>0</b><br><sub>collisions</sub></td>
-</tr>
-</table>
-
 </div>
 
 <p align="center">
   <img src="docs/img/hero.png" alt="A live top-down smart-city intersection with cars, bike lanes, footpaths and blocks of towers" width="880">
 </p>
 
-This is a little world I built to teach myself a few hard things by watching them happen, not by reading about them. Every dot on the road is a vehicle making its own decisions, all at the same time, many times a second. Below is what I actually learned along the way.
+## What it is
+
+UrbanFlow is a real-time simulation of a busy signalized intersection. Every vehicle on screen is an independent agent making its own decisions many times a second. A Java engine runs the whole world across roughly thirty threads and streams it to the browser over WebSocket, where a React app draws it as a hand-illustrated cartoon city. Up to **120 cars**, buses, vans and ambulances move through the crossing at the same time, and a runtime checker proves they never collide.
+
+I built it to learn real-time concurrent systems by watching them work, not by reading about them.
+
+## What this project demonstrates
+
+If you are skimming, here is the engineering on display:
+
+- **Concurrency without locks.** Around thirty threads read the same world at once with no contention, because they all read from one immutable snapshot while a single writer prepares the next one. No shared mutable state, no deadlocks, no torn reads.
+- **Real-time systems.** A fixed 30 Hz simulation loop drives the engine, and world snapshots are streamed to the browser over STOMP/WebSocket, interpolated for smooth motion between frames.
+- **Correctness under load.** Safety is enforced by construction (following gaps, signal phasing, "don't block the box," emergency preemption) and verified by an invariant checker that runs every tick. The result holds at full density: zero collisions.
+- **Full-stack engineering.** A Spring Boot backend (the simulation and the wire protocol) paired with a TypeScript + React + Canvas frontend (rendering, interpolation, live controls) drawn entirely in vector, no sprites.
+- **Clean systems design.** Three small patterns carry the whole thing: an immutable snapshot that is swapped atomically, a command mailbox so the UI never touches engine state directly, and a heartbeat loop that decouples simulation rate from render rate.
 
 ## Run it locally
 
@@ -58,17 +59,17 @@ npm run dev
 
 Open the URL Vite prints (usually `http://localhost:5173`) and press **Launch simulation**. Start the backend first, then the frontend.
 
-> Tip: the control panel on the right lets you change traffic density live (up to 120 vehicles), retime the signals, and dispatch an ambulance or fire truck that flips the lights in its favour.
+> The control panel on the right lets you change traffic density live (up to 120 vehicles), retime the signals, and dispatch an ambulance or fire truck that flips the lights in its favour.
 
-## Doing a hundred things at once (without it falling apart)
+## The hard part: a hundred cars all thinking at once
 
-The whole point was traffic where every car thinks for itself, all together, all the time. That sounds simple until you try it: when a hundred little "minds" reach for the same shared world at the same instant, things normally corrupt or freeze.
+The whole point was traffic where every car thinks for itself, all together, all the time. That sounds simple until you try it: when a hundred little "minds" reach for the same shared world at the same instant, the data normally corrupts or the program freezes.
 
-The idea that made it click for me was surprisingly calm:
+The idea that made it click was surprisingly calm:
 
 > Everyone reads from the same frozen **photo** of the world. Then a single referee writes the **next** photo. Nobody ever scribbles on the same page at the same time.
 
-So roughly thirty workers can all look at the road at once (because a photo can't change while you read it), and only one of them is ever allowed to paint the next moment. With that one rule in place, the simulation never trips over itself and never locks up. That was the big lesson: the fix for chaos was not more locks and guards, it was giving everyone something that can't change underneath them.
+So roughly thirty workers can all look at the road at once (a photo can't change while you read it), and only one of them is ever allowed to paint the next moment. With that one rule in place, the simulation never trips over itself and never locks up. The fix for chaos was not more locks and guards, it was giving everyone something that cannot change underneath them.
 
 ## How it fits together
 
@@ -89,35 +90,29 @@ flowchart LR
     Snap -- "world snapshots (WebSocket)" --> UI
 ```
 
-A few **design patterns** I picked up, in plain words:
-
 - **The shared photo** - one snapshot of the world that everybody reads from, swapped out all at once. This is what keeps the crowd of workers from fighting.
-- **The mailbox** - when you drag a slider or send an ambulance, it doesn't reach into the engine. It drops a note in a box, and the engine reads its mail when it's ready.
+- **The mailbox** - when you drag a slider or send an ambulance, it doesn't reach into the engine. It drops a note in a box, and the engine reads its mail when it is ready.
 - **The heartbeat** - the world ticks about thirty times a second, like a game loop, so motion looks smooth even though the data arrives in little bursts.
 
-The nicest surprise was how much of "good design" turned out to be about *who is allowed to touch what, and when*.
+## Zero collisions, by construction
 
-## The rules that keep everyone safe
-
-To get to **zero crashes**, I had to teach the cars the same rules we all learned for the road. Writing them down as code made me realize how much careful etiquette is hidden in an ordinary intersection:
+To get to zero crashes, the cars follow the same etiquette we all learned for the road, written down as code:
 
 - **Keep your distance.** Every vehicle watches the one ahead and leaves a real gap, easing off the gas as it closes in.
-- **Green means the whole path is yours.** The lights are timed so the streams that get a green never cross each other. Left turns get their own moment, with a yellow and an all-red pause in between.
-- **Never block the box.** A car only enters the middle if it can make it all the way out. That single rule makes gridlock impossible.
+- **Green means the whole path is yours.** The lights are timed so streams that get a green never cross. Left turns get their own moment, with a yellow and an all-red pause between phases.
+- **Never block the box.** A car only enters the middle if it can make it all the way out, which makes gridlock impossible.
 - **A red light is a wall.** Cars stop cleanly at the line and wait their turn.
 - **Make way for sirens.** An ambulance or fire truck flips the lights in its favour and everyone yields.
 
-A watcher checks the whole road on every single heartbeat and confirms no two vehicles ever overlap. The `0 collisions` you see on screen isn't a hope, it's checked thousands of times a second.
+A watcher checks the whole road on every heartbeat and confirms no two vehicles ever overlap. The zero you see on screen is not a hope, it is verified thousands of times a second.
 
 <p align="center">
   <img src="docs/img/model.png" alt="Close-up of the intersection: signals, crosswalks and queued cars" width="620">
 </p>
 
-## A little living city
+## A living city
 
-Nine kinds of vehicle, from a bicycle up to a fire truck, each with its own size and feel: a bus is heavy and slow off the line, a motorbike is nimble, and nothing ever spills over its lane lines. When a car eases off and stops, its brake lights glow red, so a queue waiting at a light reads as patient rather than frozen.
-
-And because a bare grid of roads is lonely, I grew a small **smart city** around the crossing: dense blocks of towers standing shoulder to shoulder, concrete footpaths, protected green bike lanes painted along the kerb, street trees, and people who walk from door to door, crossing only at the crosswalks when their light turns. It is all hand-drawn on a canvas and laid out once from a fixed seed, so it never flickers and the same little world greets you every time.
+Nine kinds of vehicle, from a bicycle up to a fire truck, each with its own size and feel: a bus is heavy and slow off the line, a motorbike is nimble, and nothing ever spills over its lane lines. When a car slows and stops, its brake lights glow red, so a queue waiting at a light reads as patient rather than frozen. Around the crossing sits a small hand-drawn city: dense blocks of towers, footpaths, protected bike lanes, street trees, and people who walk from door to door and cross only at the crosswalks when their light turns.
 
 ## Tech stack
 
