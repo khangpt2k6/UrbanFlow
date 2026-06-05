@@ -57,6 +57,7 @@ export function drawScene(
   drawLaneMarkings(ctx, view);
   drawStopLines(ctx, view);
   for (const v of vehicles) drawVehicle(ctx, view, v, nowMs);
+  drawPedestrians(ctx, view, signals, nowMs);
   if (signals) drawSignals(ctx, view, signals);
   drawCompass(ctx, canvasW, canvasH);
 }
@@ -274,6 +275,90 @@ function drawBuildings(ctx: CanvasRenderingContext2D, view: View) {
 
 function drawGreenery(ctx: CanvasRenderingContext2D, view: View) {
   for (const g of CITY.greens) drawTree(ctx, view, g.x, g.y, g.s);
+}
+
+// ----------------------------------------------------------------- pedestrians
+// Ambient walkers stroll the footpaths; a few crossers wait at the kerb and only step onto a
+// crosswalk while that road's vehicles are stopped (its through signal is red). Frontend-only -
+// the backend safety model is untouched; these are decorative city life.
+const PED_LAT = (ROAD_EDGE + SIDEWALK_OUT) / 2;            // footpath midline
+const PED_NEAR = LAYOUT.half + CROSSWALK_DEPTH + 2.5;      // start of the footpath past the crossing
+const PED_FAR = 76;
+const CROSS_LAT = LAYOUT.half + CROSSWALK_DEPTH / 2;       // centre of a crosswalk band
+const PED_COLORS = ['#e7563f', '#f0a431', '#3f7fd0', '#7d52c9', '#2f9e6b', '#d94f8e', '#3a414e', '#16a3a3'];
+
+interface Stroller { ax: 'v' | 'h'; side: number; half: number; pos: number; dir: number; speed: number; color: string; }
+interface Crosser { kind: 'NS' | 'EW'; sign: number; t: number; dir: number; speed: number; color: string; }
+
+function buildPeds(): { strollers: Stroller[]; crossers: Crosser[] } {
+  const rng = makeRng(9001);
+  const strollers: Stroller[] = [];
+  for (const ax of ['v', 'h'] as const)
+    for (const side of [1, -1])
+      for (const half of [1, -1])
+        for (let i = 0; i < 3; i++)
+          strollers.push({
+            ax, side, half,
+            pos: PED_NEAR + rng() * (PED_FAR - PED_NEAR),
+            dir: rng() < 0.5 ? 1 : -1,
+            speed: 3.5 + rng() * 2.5,
+            color: PED_COLORS[Math.floor(rng() * PED_COLORS.length)],
+          });
+  const crossers: Crosser[] = [];
+  for (const kind of ['NS', 'EW'] as const)
+    for (const sign of [1, -1])
+      for (let i = 0; i < 2; i++)
+        crossers.push({
+          kind, sign,
+          t: -RH + (i + 0.5) * RH,
+          dir: rng() < 0.5 ? 1 : -1,
+          speed: 4.5 + rng() * 2,
+          color: PED_COLORS[Math.floor(rng() * PED_COLORS.length)],
+        });
+  return { strollers, crossers };
+}
+const PEDS = buildPeds();
+let lastPedMs = 0;
+
+function drawPedestrians(ctx: CanvasRenderingContext2D, view: View, signals: SignalState | null, nowMs: number) {
+  let dt = 0;
+  if (lastPedMs) dt = Math.min(0.08, Math.max(0, (nowMs - lastPedMs) / 1000));
+  lastPedMs = nowMs;
+
+  for (const p of PEDS.strollers) {
+    p.pos += p.dir * p.speed * dt;
+    if (p.pos > PED_FAR) { p.pos = PED_FAR; p.dir = -1; }
+    if (p.pos < PED_NEAR) { p.pos = PED_NEAR; p.dir = 1; }
+    const x = p.ax === 'v' ? p.side * PED_LAT : p.half * p.pos;
+    const y = p.ax === 'v' ? p.half * p.pos : p.side * PED_LAT;
+    drawPed(ctx, view, x, y, p.color);
+  }
+
+  for (const c of PEDS.crossers) {
+    const approach = c.kind === 'NS' ? (c.sign > 0 ? 'NORTH' : 'SOUTH') : (c.sign > 0 ? 'EAST' : 'WEST');
+    const red = signals ? signals.through[approach] === 'RED' : false;
+    const atKerb = c.t >= RH || c.t <= -RH;
+    if (atKerb) {
+      if (red) { c.dir = c.t > 0 ? -1 : 1; c.t += c.dir * c.speed * dt; }
+    } else {
+      c.t += c.dir * c.speed * dt; // mid-crossing: keep going so nobody freezes in the road
+    }
+    c.t = Math.max(-RH, Math.min(RH, c.t));
+    const x = c.kind === 'NS' ? c.t : c.sign * CROSS_LAT;
+    const y = c.kind === 'NS' ? c.sign * CROSS_LAT : c.t;
+    drawPed(ctx, view, x, y, c.color);
+  }
+}
+
+function drawPed(ctx: CanvasRenderingContext2D, view: View, x: number, y: number, color: string) {
+  const [sx, sy] = worldToScreen(x, y, view);
+  const r = Math.max(2, 0.5 * view.scale);
+  ctx.fillStyle = 'rgba(20,28,28,0.22)';
+  ctx.beginPath(); ctx.ellipse(sx + 1, sy + r * 0.7, r * 0.95, r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = color; // shoulders / torso
+  roundRect(ctx, sx - r * 0.62, sy - r * 0.5, r * 1.24, r * 1.4, r * 0.55); ctx.fill();
+  ctx.fillStyle = '#e8b58c'; // head
+  ctx.beginPath(); ctx.arc(sx, sy - r * 0.35, r * 0.52, 0, Math.PI * 2); ctx.fill();
 }
 
 // A flat-roofed tower seen from above. A darker copy of the footprint, pushed toward the light,
@@ -515,6 +600,21 @@ function drawVehicle(ctx: CanvasRenderingContext2D, view: View, v: VehicleView, 
   ctx.fill();
   ctx.restore();
   drawVehicleArt(ctx, v.t, L, W, info.color, nowMs);
+  // Brake lights: the rear glows red as the vehicle slows or stops, so a queue reads as
+  // deliberately braking rather than frozen. Driven by the real speed the backend sends.
+  if (v.v < 2.4) {
+    const glow = Math.min(1, (2.4 - v.v) / 2.0);
+    const rx = -L / 2 + L * 0.03;
+    const ry = W * 0.28;
+    const rr = Math.max(0.9, W * 0.13);
+    ctx.save();
+    ctx.fillStyle = `rgba(255,48,36,${0.55 + 0.4 * glow})`;
+    ctx.shadowColor = 'rgba(255,40,28,0.9)';
+    ctx.shadowBlur = 7 * glow;
+    ctx.beginPath(); ctx.arc(rx, -ry, rr, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(rx, ry, rr, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
   ctx.restore();
 }
 
