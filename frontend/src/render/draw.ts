@@ -31,8 +31,20 @@ const ASPECT_DIM: Record<SignalColor, string> = { GREEN: '#1c3a2a', YELLOW: '#3d
 
 // Smallest drawn vehicle footprint (meters, scaled by the view). Bicycles/motorcycles are tiny
 // in reality, so without a floor they shrink to a few pixels; this keeps every vehicle legible.
-const MIN_VEHICLE_LEN_M = 3.4;
-const MIN_VEHICLE_WID_M = 1.5;
+const MIN_VEHICLE_LEN_M = 3.9;
+const MIN_VEHICLE_WID_M = 1.7;
+
+// Render-only size nudges (do NOT touch the backend-synced length, see vehicleTypes R1). Cars and
+// other small vehicles read as tiny next to buses and trucks, so we draw them a little longer and
+// chunkier. The width stays under the truck's 2.5 m and inside one lane, so size order and lane
+// fit still hold; the length grows only a few percent, well inside the following gap, so bodies
+// never overlap.
+const DRAW_BOOST: Record<number, { l: number; w: number }> = {
+  0: { l: 1.18, w: 1.0 }, // bicycle (width is floored anyway)
+  1: { l: 1.18, w: 1.0 }, // motorcycle
+  2: { l: 1.14, w: 1.3 }, // car
+  3: { l: 1.12, w: 1.22 }, // SUV
+};
 
 export function drawScene(
   ctx: CanvasRenderingContext2D,
@@ -57,7 +69,7 @@ export function drawScene(
   drawLaneMarkings(ctx, view);
   drawStopLines(ctx, view);
   for (const v of vehicles) drawVehicle(ctx, view, v, nowMs);
-  drawPedestrians(ctx, view, signals, nowMs);
+  drawPedestrians(ctx, view, signals, vehicles, nowMs);
   if (signals) drawSignals(ctx, view, signals);
   drawCompass(ctx, canvasW, canvasH);
 }
@@ -128,7 +140,7 @@ function drawCompass(ctx: CanvasRenderingContext2D, canvasW: number, canvasH: nu
 
   // cardinal labels
   const lr = r * 0.82;
-  ctx.font = `bold ${Math.round(r * 0.34)}px system-ui, sans-serif`;
+  ctx.font = `800 ${Math.round(r * 0.34)}px 'Baloo 2', system-ui, sans-serif`;
   const labels: [string, number, number, string][] = [
     ['N', cx, cy - lr, '#d63b34'],
     ['S', cx, cy + lr, '#3a4150'],
@@ -320,45 +332,83 @@ function buildPeds(): { strollers: Stroller[]; crossers: Crosser[] } {
 const PEDS = buildPeds();
 let lastPedMs = 0;
 
-function drawPedestrians(ctx: CanvasRenderingContext2D, view: View, signals: SignalState | null, nowMs: number) {
+function drawPedestrians(ctx: CanvasRenderingContext2D, view: View, signals: SignalState | null, vehicles: VehicleView[], nowMs: number) {
   let dt = 0;
   if (lastPedMs) dt = Math.min(0.08, Math.max(0, (nowMs - lastPedMs) / 1000));
   lastPedMs = nowMs;
 
+  // Strollers keep to the footpaths, well clear of the carriageway, so they are always safe.
   for (const p of PEDS.strollers) {
     p.pos += p.dir * p.speed * dt;
     if (p.pos > PED_FAR) { p.pos = PED_FAR; p.dir = -1; }
     if (p.pos < PED_NEAR) { p.pos = PED_NEAR; p.dir = 1; }
     const x = p.ax === 'v' ? p.side * PED_LAT : p.half * p.pos;
     const y = p.ax === 'v' ? p.half * p.pos : p.side * PED_LAT;
-    drawPed(ctx, view, x, y, p.color);
+    drawPed(ctx, view, x, y, p.color, p.dir * (p.ax === 'v' ? 0 : 1), p.dir * (p.ax === 'v' ? 1 : 0));
   }
 
+  // Crossers obey the walk rule AND look before they step. The simulated cars do not model
+  // pedestrians, so the pedestrians do all the yielding: leave the kerb only on the walk phase
+  // (the road being crossed is red) with the crossing clear, pause for any vehicle in the
+  // crosswalk, and step back out of the way if one comes right at them. Nobody gets run over.
+  const Z_ALONG = 4.0;       // half-depth of the crosswalk danger band (stripes + a little overhang)
+  const Z_LAT = RH + 1.5;
   for (const c of PEDS.crossers) {
+    const crossLat = c.sign * CROSS_LAT;
+    let blocked = false;
+    let imminentFrom = NaN; // crossing-axis position of a vehicle right on top of the pedestrian
+    for (const v of vehicles) {
+      const inBand = c.kind === 'NS'
+        ? Math.abs(v.y - crossLat) < Z_ALONG && Math.abs(v.x) < Z_LAT
+        : Math.abs(v.x - crossLat) < Z_ALONG && Math.abs(v.y) < Z_LAT;
+      if (!inBand) continue;
+      blocked = true;
+      const along = c.kind === 'NS' ? v.x : v.y;
+      if (Math.abs(along - c.t) < 3.2) { imminentFrom = along; break; }
+    }
     const approach = c.kind === 'NS' ? (c.sign > 0 ? 'NORTH' : 'SOUTH') : (c.sign > 0 ? 'EAST' : 'WEST');
     const red = signals ? signals.through[approach] === 'RED' : false;
     const atKerb = c.t >= RH || c.t <= -RH;
-    if (atKerb) {
-      if (red) { c.dir = c.t > 0 ? -1 : 1; c.t += c.dir * c.speed * dt; }
-    } else {
-      c.t += c.dir * c.speed * dt; // mid-crossing: keep going so nobody freezes in the road
-    }
+
+    if (!Number.isNaN(imminentFrom)) {
+      const away = imminentFrom >= c.t ? -1 : 1;      // step away from the car, toward the nearer kerb
+      c.dir = away;
+      c.t += away * c.speed * 1.5 * dt;
+    } else if (atKerb) {
+      if (red && !blocked) { c.dir = c.t > 0 ? -1 : 1; c.t += c.dir * c.speed * dt; } // step off
+    } else if (!blocked) {
+      c.t += c.dir * c.speed * dt;                                                     // clear: cross
+    } // else blocked-but-not-imminent: wait in place for the car to pass
+
     c.t = Math.max(-RH, Math.min(RH, c.t));
-    const x = c.kind === 'NS' ? c.t : c.sign * CROSS_LAT;
-    const y = c.kind === 'NS' ? c.sign * CROSS_LAT : c.t;
-    drawPed(ctx, view, x, y, c.color);
+    const x = c.kind === 'NS' ? c.t : crossLat;
+    const y = c.kind === 'NS' ? crossLat : c.t;
+    const dx = c.kind === 'NS' ? c.dir : 0;
+    const dy = c.kind === 'NS' ? 0 : c.dir;
+    drawPed(ctx, view, x, y, c.color, dx, dy);
   }
 }
 
-function drawPed(ctx: CanvasRenderingContext2D, view: View, x: number, y: number, color: string) {
+function drawPed(ctx: CanvasRenderingContext2D, view: View, x: number, y: number, color: string, dx = 0, dy = 0) {
   const [sx, sy] = worldToScreen(x, y, view);
-  const r = Math.max(2, 0.5 * view.scale);
+  // Bigger than life so walkers read clearly from above, but still well under a car's footprint.
+  const r = Math.max(3, 0.82 * view.scale);
+  // soft shadow
   ctx.fillStyle = 'rgba(20,28,28,0.22)';
-  ctx.beginPath(); ctx.ellipse(sx + 1, sy + r * 0.7, r * 0.95, r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = color; // shoulders / torso
-  roundRect(ctx, sx - r * 0.62, sy - r * 0.5, r * 1.24, r * 1.4, r * 0.55); ctx.fill();
-  ctx.fillStyle = '#e8b58c'; // head
-  ctx.beginPath(); ctx.arc(sx, sy - r * 0.35, r * 0.52, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(sx + 1, sy + r * 0.7, r * 1.0, r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+  // face the walking direction (world +y is up, screen y is flipped)
+  const ang = (dx || dy) ? Math.atan2(-dy, dx) : 0;
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(ang);
+  // shoulders: a torso wider across the walk direction than along it
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.ellipse(0, 0, r * 0.72, r * 0.95, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = Math.max(0.6, r * 0.12); ctx.strokeStyle = shade(color, -0.3); ctx.stroke();
+  // head, nudged toward the front
+  ctx.fillStyle = '#eab38a';
+  ctx.beginPath(); ctx.arc(r * 0.28, 0, r * 0.55, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
 }
 
 // A flat-roofed tower seen from above. A darker copy of the footprint, pushed toward the light,
@@ -492,27 +542,29 @@ function drawStopLines(ctx: CanvasRenderingContext2D, view: View) {
 function drawSignals(ctx: CanvasRenderingContext2D, view: View, signals: SignalState) {
   const h = LAYOUT.half;
   const rh = roadHalfWidthM();
-  // Tuck each head into the corner of the intersection: just off the road edge
-  // (lat), level with the stop line (along), on the approaching driver's right.
-  // Each head runs PARALLEL to its road so it hugs the curb instead of poking
-  // across the asphalt -> N/S heads are vertical, E/W heads are horizontal.
-  const lat = rh + 3; // a few metres onto the corner sidewalk, clear of the road
-  const along = h + STOP_SETBACK; // level with the stop line
-  const heads: { ax: 'NORTH' | 'SOUTH' | 'EAST' | 'WEST'; x: number; y: number; horizontal: boolean }[] = [
-    { ax: 'NORTH', x: -lat, y: along, horizontal: false },
-    { ax: 'SOUTH', x: lat, y: -along, horizontal: false },
-    { ax: 'EAST', x: along, y: lat, horizontal: true },
-    { ax: 'WEST', x: -along, y: -lat, horizontal: true },
+  // Sit each head at the corner where the white stop line meets the road's edge: hard against the
+  // kerb (lat) and level with the stop line (along), then pushed outward by half its length so the
+  // housing sits on the approach side of the line (not straddling the crosswalk), facing the
+  // stopped driver. N/S heads run vertical, E/W heads horizontal, parallel to their road.
+  const lat = rh + 1.4; // hard against the road edge / kerb
+  const along = h + STOP_SETBACK; // the white stop line
+  const heads: { ax: 'NORTH' | 'SOUTH' | 'EAST' | 'WEST'; x: number; y: number; horizontal: boolean; ox: number; oy: number }[] = [
+    { ax: 'NORTH', x: -lat, y: along, horizontal: false, ox: 0, oy: -1 },
+    { ax: 'SOUTH', x: lat, y: -along, horizontal: false, ox: 0, oy: 1 },
+    { ax: 'EAST', x: along, y: lat, horizontal: true, ox: 1, oy: 0 },
+    { ax: 'WEST', x: -along, y: -lat, horizontal: true, ox: -1, oy: 0 },
   ];
-  const R = Math.max(3.5, 1.0 * view.scale);
+  const R = Math.max(3, 0.64 * view.scale);
   const gap = R * 0.55;
   const pad = R * 0.7;
+  const longSide = R * 8 + gap * 3 + pad * 2; // 3 circles + arrow
+  const shortSide = R * 2 + pad * 2;
   for (const head of heads) {
-    const [cx, cy] = worldToScreen(head.x, head.y, view);
+    let [cx, cy] = worldToScreen(head.x, head.y, view);
+    cx += head.ox * (longSide / 2); // push the housing onto the approach side of the stop line
+    cy += head.oy * (longSide / 2);
     const through = signals.through[head.ax];
     const left = signals.left[head.ax];
-    const longSide = R * 8 + gap * 3 + pad * 2; // 3 circles + arrow
-    const shortSide = R * 2 + pad * 2;
     const w = head.horizontal ? longSide : shortSide;
     const hgt = head.horizontal ? shortSide : longSide;
     ctx.fillStyle = C.housing;
@@ -583,9 +635,10 @@ function drawVehicle(ctx: CanvasRenderingContext2D, view: View, v: VehicleView, 
   // width is the true vehicle width clamped to one lane. The body is crisp canvas vector art.
   // A minimum on-screen footprint keeps the smallest vehicles (bicycle 1.8 m, motorcycle 2.2 m)
   // readable as little vehicles instead of near-invisible dots at this zoom.
-  const L = Math.max(chord, info.length * view.scale, MIN_VEHICLE_LEN_M * view.scale);
+  const boost = DRAW_BOOST[v.t] ?? { l: 1, w: 1 };
+  const L = Math.max(chord, info.length * view.scale, MIN_VEHICLE_LEN_M * view.scale) * boost.l;
   const W = Math.max(
-    Math.min(info.width, LANE_FIT * LAYOUT.laneWidth) * view.scale,
+    Math.min(info.width * boost.w, LANE_FIT * LAYOUT.laneWidth) * view.scale,
     MIN_VEHICLE_WID_M * view.scale,
   );
 
