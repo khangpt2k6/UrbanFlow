@@ -290,102 +290,226 @@ function drawGreenery(ctx: CanvasRenderingContext2D, view: View) {
 }
 
 // ----------------------------------------------------------------- pedestrians
-// Ambient walkers stroll the footpaths; a few crossers wait at the kerb and only step onto a
-// crosswalk while that road's vehicles are stopped (its through signal is red). Frontend-only -
-// the backend safety model is untouched; these are decorative city life.
+// Real origin->destination walkers. Each one appears at a building door (or strolls in from a map
+// edge), follows the footpaths, crosses roads ONLY at crosswalks - and only on the walk phase with
+// the crossing clear, yielding to any car - then arrives at a destination building or map edge and
+// DESPAWNS. A spawn timer keeps a steady population; nobody loops back and forth forever. The
+// simulated cars don't model pedestrians, so the walkers do ALL the yielding and are never run
+// over. Frontend-only. The static city never re-randomises: the graph is pure geometry from the
+// frozen CITY, and the only PRNG (makeRng(9001)) advances solely at spawn time, never per frame.
 const PED_LAT = (ROAD_EDGE + SIDEWALK_OUT) / 2;            // footpath midline
-const PED_NEAR = LAYOUT.half + CROSSWALK_DEPTH + 2.5;      // start of the footpath past the crossing
-const PED_FAR = 76;
 const CROSS_LAT = LAYOUT.half + CROSSWALK_DEPTH / 2;       // centre of a crosswalk band
 const PED_COLORS = ['#e7563f', '#f0a431', '#3f7fd0', '#7d52c9', '#2f9e6b', '#d94f8e', '#3a414e', '#16a3a3'];
 
-interface Stroller { ax: 'v' | 'h'; side: number; half: number; pos: number; dir: number; speed: number; color: string; }
-interface Crosser { kind: 'NS' | 'EW'; sign: number; t: number; dir: number; speed: number; color: string; }
+const FAR_WALK = 78;            // strip exits just past the visible window
+const TARGET_POP = 22;
+const SPAWN_EVERY_MS = 900;
+const MAX_AGE_MS = 90_000;      // hard anti-stuck cap
+const GIVE_UP_MS = 22_000;      // give up waiting at a kerb -> walk to an edge instead
+const PZ_ALONG = 4.0;           // crosswalk danger-band half-depth (stripes + a little overhang)
+const PZ_LAT = RH + 1.5;        // crosswalk danger-band half-width
+const PIMM = 3.2;               // "a car is right on top of me" distance
 
-function buildPeds(): { strollers: Stroller[]; crossers: Crosser[] } {
-  const rng = makeRng(9001);
-  const strollers: Stroller[] = [];
-  for (const ax of ['v', 'h'] as const)
-    for (const side of [1, -1])
-      for (const half of [1, -1])
-        for (let i = 0; i < 3; i++)
-          strollers.push({
-            ax, side, half,
-            pos: PED_NEAR + rng() * (PED_FAR - PED_NEAR),
-            dir: rng() < 0.5 ? 1 : -1,
-            speed: 3.5 + rng() * 2.5,
-            color: PED_COLORS[Math.floor(rng() * PED_COLORS.length)],
-          });
-  const crossers: Crosser[] = [];
-  for (const kind of ['NS', 'EW'] as const)
-    for (const sign of [1, -1])
-      for (let i = 0; i < 2; i++)
-        crossers.push({
-          kind, sign,
-          t: -RH + (i + 0.5) * RH,
-          dir: rng() < 0.5 ? 1 : -1,
-          speed: 4.5 + rng() * 2,
-          color: PED_COLORS[Math.floor(rng() * PED_COLORS.length)],
-        });
-  return { strollers, crossers };
+type CrossMeta = { kind: 'NS' | 'EW'; sign: number };
+interface Loc { x: number; y: number; corner: number }
+interface RoutePt { x: number; y: number; cross?: CrossMeta }
+interface Walker {
+  pts: RoutePt[]; i: number; u: number;
+  speed: number; color: string; laneOff: number; bob: number;
+  state: 'WALK' | 'WAIT' | 'CROSS' | 'DONE'; waitMs: number; ageMs: number;
+  wx: number; wy: number; fx: number; fy: number;
 }
-const PEDS = buildPeds();
+
+// 4 corner pivots where a block's two footpaths meet (indices 0=NE 1=NW 2=SW 3=SE).
+const CORNER = [
+  { x: PED_LAT, y: PED_LAT }, { x: -PED_LAT, y: PED_LAT }, { x: -PED_LAT, y: -PED_LAT }, { x: PED_LAT, y: -PED_LAT },
+];
+// the crosswalk joining each adjacent corner pair: its two kerb "feet" + the carriageway it crosses
+const CW: Record<string, { meta: CrossMeta; feet: Record<number, { x: number; y: number }> }> = {
+  '0,1': { meta: { kind: 'NS', sign: 1 }, feet: { 0: { x: PED_LAT, y: CROSS_LAT }, 1: { x: -PED_LAT, y: CROSS_LAT } } },
+  '1,2': { meta: { kind: 'EW', sign: -1 }, feet: { 1: { x: -CROSS_LAT, y: PED_LAT }, 2: { x: -CROSS_LAT, y: -PED_LAT } } },
+  '2,3': { meta: { kind: 'NS', sign: -1 }, feet: { 2: { x: -PED_LAT, y: -CROSS_LAT }, 3: { x: PED_LAT, y: -CROSS_LAT } } },
+  '0,3': { meta: { kind: 'EW', sign: 1 }, feet: { 3: { x: CROSS_LAT, y: -PED_LAT }, 0: { x: CROSS_LAT, y: PED_LAT } } },
+};
+
+function clampN(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
+function quadCorner(sx: number, sy: number) { return sx > 0 ? (sy > 0 ? 0 : 3) : (sy > 0 ? 1 : 2); }
+
+// A door is a point on the nearer footpath strip in front of a (front-row) building.
+function buildDoors(): Loc[] {
+  const out: Loc[] = [];
+  for (const b of CITY.buildings) {
+    if (Math.min(b.w, b.h) < 8) continue;
+    const sx = b.x >= 0 ? 1 : -1, sy = b.y >= 0 ? 1 : -1;
+    const gapV = Math.abs(b.x) - b.w / 2 - PED_LAT;
+    const gapH = Math.abs(b.y) - b.h / 2 - PED_LAT;
+    const corner = quadCorner(sx, sy);
+    if (gapV <= gapH) out.push({ x: sx * PED_LAT, y: sy * clampN(Math.abs(b.y), PED_LAT + 1, FAR_WALK), corner });
+    else out.push({ x: sx * clampN(Math.abs(b.x), PED_LAT + 1, FAR_WALK), y: sy * PED_LAT, corner });
+  }
+  return out;
+}
+const DOORS = buildDoors();
+const EXITS: Loc[] = [
+  { x: PED_LAT, y: FAR_WALK, corner: 0 }, { x: FAR_WALK, y: PED_LAT, corner: 0 },
+  { x: -PED_LAT, y: FAR_WALK, corner: 1 }, { x: -FAR_WALK, y: PED_LAT, corner: 1 },
+  { x: -PED_LAT, y: -FAR_WALK, corner: 2 }, { x: -FAR_WALK, y: -PED_LAT, corner: 2 },
+  { x: PED_LAT, y: -FAR_WALK, corner: 3 }, { x: FAR_WALK, y: -PED_LAT, corner: 3 },
+];
+
+// Shortest walk around the corner ring 0-1-2-3-0 (adjacent corners are joined by one crosswalk).
+function ringPath(ci: number, cd: number): number[] {
+  const fwd = (cd - ci + 4) % 4;
+  const seq = [ci]; let c = ci;
+  if (fwd <= 2) for (let s = 0; s < fwd; s++) { c = (c + 1) % 4; seq.push(c); }
+  else for (let s = 0; s < 4 - fwd; s++) { c = (c + 3) % 4; seq.push(c); }
+  return seq;
+}
+function pushPt(pts: RoutePt[], x: number, y: number) {
+  const last = pts[pts.length - 1];
+  if (last && !last.cross && Math.abs(last.x - x) < 0.02 && Math.abs(last.y - y) < 0.02) return;
+  pts.push({ x, y });
+}
+// Build a finite waypoint route: origin -> its corner -> (cross at sanctioned crosswalks) -> dest.
+function buildRoute(o: Loc, d: Loc): RoutePt[] {
+  const pts: RoutePt[] = [];
+  pushPt(pts, o.x, o.y);
+  pushPt(pts, CORNER[o.corner].x, CORNER[o.corner].y);
+  if (o.corner !== d.corner) {
+    const seq = ringPath(o.corner, d.corner);
+    for (let k = 0; k < seq.length - 1; k++) {
+      const ci = seq[k], cj = seq[k + 1];
+      const cw = CW[[ci, cj].sort((a, b) => a - b).join(',')];
+      pushPt(pts, cw.feet[ci].x, cw.feet[ci].y);
+      pts[pts.length - 1].cross = cw.meta;            // this segment IS the carriageway crossing
+      pushPt(pts, cw.feet[cj].x, cw.feet[cj].y);
+      pushPt(pts, CORNER[cj].x, CORNER[cj].y);
+    }
+  }
+  pushPt(pts, d.x, d.y);
+  return pts;
+}
+
+let walkers: Walker[] = [];
+let spawnAccMs = 0;
+let lastVehHash = -1;
+let lastVehChangeMs = 0;
 let lastPedMs = 0;
+const pedRng = makeRng(9001);
+
+function pickLoc(doorBias: number): Loc {
+  if (DOORS.length && pedRng() < doorBias) return DOORS[Math.floor(pedRng() * DOORS.length)];
+  return EXITS[Math.floor(pedRng() * EXITS.length)];
+}
+function spawnWalker(warm: boolean): Walker {
+  const o = pickLoc(0.8);
+  let d = pickLoc(0.65);
+  for (let t = 0; t < 4 && Math.hypot(d.x - o.x, d.y - o.y) < 22; t++) d = pickLoc(0.65);
+  const w: Walker = {
+    pts: buildRoute(o, d), i: 0, u: 0,
+    speed: 3.7 + pedRng() * 1.7,
+    color: PED_COLORS[Math.floor(pedRng() * PED_COLORS.length)],
+    laneOff: (pedRng() - 0.5) * 3,
+    bob: pedRng() * Math.PI * 2,
+    state: 'WALK', waitMs: 0, ageMs: 0, wx: o.x, wy: o.y, fx: 1, fy: 0,
+  };
+  if (warm) {
+    // start on a random footpath leg (never mid-carriageway) so the no-overlap invariant holds at t=0
+    const foot: number[] = [];
+    for (let k = 0; k < w.pts.length - 1; k++) if (!w.pts[k].cross) foot.push(k);
+    if (foot.length) { w.i = foot[Math.floor(pedRng() * foot.length)]; w.u = pedRng() * 0.9; }
+  }
+  finalizePos(w);
+  return w;
+}
+for (let k = 0; k < TARGET_POP; k++) walkers.push(spawnWalker(true));
+
+function finalizePos(w: Walker) {
+  if (w.i >= w.pts.length - 1) { const e = w.pts[w.pts.length - 1]; w.wx = e.x; w.wy = e.y; return; }
+  const A = w.pts[w.i], B = w.pts[w.i + 1];
+  const u = w.u < 0 ? 0 : w.u > 1 ? 1 : w.u;
+  let dx = B.x - A.x, dy = B.y - A.y; const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
+  // laneOff fans walkers out perpendicular to travel so they don't stack on a strip / crosswalk.
+  // It is a draw-only offset: the yield band test below uses the on-axis position, never this.
+  w.wx = A.x + (B.x - A.x) * u - dy * w.laneOff;
+  w.wy = A.y + (B.y - A.y) * u + dx * w.laneOff;
+  w.fx = dx; w.fy = dy;
+}
+
+function nearestCorner(x: number, y: number) { return quadCorner(x >= 0 ? 1 : -1, y >= 0 ? 1 : -1); }
+function rerouteToEdge(w: Walker) {
+  const c = nearestCorner(w.wx, w.wy);
+  const exit = EXITS.find((e) => e.corner === c) ?? EXITS[0];
+  w.pts = [{ x: w.wx, y: w.wy }, { x: CORNER[c].x, y: CORNER[c].y }, { x: exit.x, y: exit.y }];
+  w.i = 0; w.u = 0; w.state = 'WALK'; w.waitMs = 0; finalizePos(w);
+}
+
+function updateWalker(w: Walker, dt: number, dtMs: number, signals: SignalState | null, vehicles: VehicleView[]) {
+  w.ageMs += dtMs;
+  if (w.ageMs > MAX_AGE_MS || w.i >= w.pts.length - 1) { w.state = 'DONE'; return; }
+  const A = w.pts[w.i], B = w.pts[w.i + 1];
+  const cross = A.cross;
+  const legLen = Math.max(0.001, Math.hypot(B.x - A.x, B.y - A.y));
+  const step = (w.speed * dt) / legLen;
+  if (!cross) {
+    w.state = 'WALK'; w.u += step; w.waitMs = 0;                  // footpath leg: always safe
+  } else {
+    const cu = w.u < 0 ? 0 : w.u > 1 ? 1 : w.u;
+    const t = cross.kind === 'NS' ? A.x + (B.x - A.x) * cu : A.y + (B.y - A.y) * cu;
+    const tB = cross.kind === 'NS' ? B.x : B.y;
+    const crossLat = cross.sign * CROSS_LAT;
+    const dirT = Math.sign(tB - t) || 1;
+    const ap = cross.kind === 'NS' ? (cross.sign > 0 ? 'NORTH' : 'SOUTH') : (cross.sign > 0 ? 'EAST' : 'WEST');
+    const red = signals ? signals.through[ap] === 'RED' : false;
+    let blocked = false, imm = NaN;
+    for (const v of vehicles) {
+      const inB = cross.kind === 'NS'
+        ? Math.abs(v.y - crossLat) < PZ_ALONG && Math.abs(v.x) < PZ_LAT
+        : Math.abs(v.x - crossLat) < PZ_ALONG && Math.abs(v.y) < PZ_LAT;
+      if (!inB) continue;
+      blocked = true;
+      const al = cross.kind === 'NS' ? v.x : v.y;
+      if (Math.abs(al - t) < PIMM) { imm = al; break; }
+    }
+    if (Math.abs(t) >= RH) {
+      // on the kerb portion of the crossing leg; gate BEFORE the next step puts a foot on the road
+      if (Math.abs(t + dirT * w.speed * dt) < RH) {
+        if (red && !blocked) { w.u += step; w.state = 'CROSS'; w.waitMs = 0; }
+        else { w.state = 'WAIT'; w.waitMs += dtMs; if (w.waitMs > GIVE_UP_MS) { rerouteToEdge(w); return; } }
+      } else { w.state = 'WALK'; w.u += step; }
+    } else if (!Number.isNaN(imm)) {
+      const carTowardB = Math.sign(imm - t) === dirT;
+      w.u += (carTowardB ? -1 : 1) * step * 1.6; w.state = 'CROSS';   // step away from the car
+    } else if (!blocked) {
+      w.u += step; w.state = 'CROSS';                                 // clear: keep crossing
+    } // else committed but a car is ahead in the crossing: hold this frame
+  }
+  if (w.u < 0) w.u = 0;
+  if (w.u >= 1) { w.u -= 1; w.i++; if (w.i >= w.pts.length - 1) w.state = 'DONE'; }
+  finalizePos(w);
+}
 
 function drawPedestrians(ctx: CanvasRenderingContext2D, view: View, signals: SignalState | null, vehicles: VehicleView[], nowMs: number) {
   let dt = 0;
   if (lastPedMs) dt = Math.min(0.08, Math.max(0, (nowMs - lastPedMs) / 1000));
   lastPedMs = nowMs;
+  let dtMs = dt * 1000;
+  // pause detection: if the cars haven't moved for ~250 ms, freeze the walkers too
+  let hash = 0;
+  for (const v of vehicles) hash += v.x * 0.7 + v.y * 1.3;
+  if (vehicles.length === 0 || Math.abs(hash - lastVehHash) > 0.05) { lastVehHash = hash; lastVehChangeMs = nowMs; }
+  if (vehicles.length > 0 && nowMs - lastVehChangeMs > 250) { dt = 0; dtMs = 0; }
 
-  // Strollers keep to the footpaths, well clear of the carriageway, so they are always safe.
-  for (const p of PEDS.strollers) {
-    p.pos += p.dir * p.speed * dt;
-    if (p.pos > PED_FAR) { p.pos = PED_FAR; p.dir = -1; }
-    if (p.pos < PED_NEAR) { p.pos = PED_NEAR; p.dir = 1; }
-    const x = p.ax === 'v' ? p.side * PED_LAT : p.half * p.pos;
-    const y = p.ax === 'v' ? p.half * p.pos : p.side * PED_LAT;
-    drawPed(ctx, view, x, y, p.color, p.dir * (p.ax === 'v' ? 0 : 1), p.dir * (p.ax === 'v' ? 1 : 0));
+  if (dt > 0) {
+    spawnAccMs += dtMs;
+    while (walkers.length < TARGET_POP && spawnAccMs >= SPAWN_EVERY_MS) { spawnAccMs -= SPAWN_EVERY_MS; walkers.push(spawnWalker(false)); }
+    for (const w of walkers) updateWalker(w, dt, dtMs, signals, vehicles);
+    walkers = walkers.filter((w) => w.state !== 'DONE');
   }
-
-  // Crossers obey the walk rule AND look before they step. The simulated cars do not model
-  // pedestrians, so the pedestrians do all the yielding: leave the kerb only on the walk phase
-  // (the road being crossed is red) with the crossing clear, pause for any vehicle in the
-  // crosswalk, and step back out of the way if one comes right at them. Nobody gets run over.
-  const Z_ALONG = 4.0;       // half-depth of the crosswalk danger band (stripes + a little overhang)
-  const Z_LAT = RH + 1.5;
-  for (const c of PEDS.crossers) {
-    const crossLat = c.sign * CROSS_LAT;
-    let blocked = false;
-    let imminentFrom = NaN; // crossing-axis position of a vehicle right on top of the pedestrian
-    for (const v of vehicles) {
-      const inBand = c.kind === 'NS'
-        ? Math.abs(v.y - crossLat) < Z_ALONG && Math.abs(v.x) < Z_LAT
-        : Math.abs(v.x - crossLat) < Z_ALONG && Math.abs(v.y) < Z_LAT;
-      if (!inBand) continue;
-      blocked = true;
-      const along = c.kind === 'NS' ? v.x : v.y;
-      if (Math.abs(along - c.t) < 3.2) { imminentFrom = along; break; }
-    }
-    const approach = c.kind === 'NS' ? (c.sign > 0 ? 'NORTH' : 'SOUTH') : (c.sign > 0 ? 'EAST' : 'WEST');
-    const red = signals ? signals.through[approach] === 'RED' : false;
-    const atKerb = c.t >= RH || c.t <= -RH;
-
-    if (!Number.isNaN(imminentFrom)) {
-      const away = imminentFrom >= c.t ? -1 : 1;      // step away from the car, toward the nearer kerb
-      c.dir = away;
-      c.t += away * c.speed * 1.5 * dt;
-    } else if (atKerb) {
-      if (red && !blocked) { c.dir = c.t > 0 ? -1 : 1; c.t += c.dir * c.speed * dt; } // step off
-    } else if (!blocked) {
-      c.t += c.dir * c.speed * dt;                                                     // clear: cross
-    } // else blocked-but-not-imminent: wait in place for the car to pass
-
-    c.t = Math.max(-RH, Math.min(RH, c.t));
-    const x = c.kind === 'NS' ? c.t : crossLat;
-    const y = c.kind === 'NS' ? crossLat : c.t;
-    const dx = c.kind === 'NS' ? c.dir : 0;
-    const dy = c.kind === 'NS' ? 0 : c.dir;
-    drawPed(ctx, view, x, y, c.color, dx, dy);
+  for (const w of walkers) {
+    const moving = w.state === 'WALK' || w.state === 'CROSS';
+    const sway = moving ? Math.sin(nowMs * 0.011 + w.bob) * 0.35 : 0; // a little walking sway (draw-only)
+    drawPed(ctx, view, w.wx - w.fy * sway, w.wy + w.fx * sway, w.color, w.fx, w.fy);
   }
 }
 
