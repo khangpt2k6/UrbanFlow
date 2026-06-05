@@ -180,7 +180,7 @@ public class SimulationEngine {
         emergencyExecutor.scheduleAtFixedRate(guard(this::emergencyTick), 0, 50, TimeUnit.MILLISECONDS);
         spawnerExecutor.scheduleAtFixedRate(guard(this::spawnerTick), 0, 150, TimeUnit.MILLISECONDS);
         statsExecutor.scheduleAtFixedRate(guard(this::statsTick), 0, 250, TimeUnit.MILLISECONDS);
-        log.info("TrafficFlow engine started: {} worker threads, {} total managed threads, {} Hz",
+        log.info("UrbanFlow engine started: {} worker threads, {} total managed threads, {} Hz",
                 props.getWorkerThreads(), threadPoolConfig.managedThreadCount(), props.getTickHz());
     }
 

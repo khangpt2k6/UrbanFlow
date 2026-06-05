@@ -2,7 +2,7 @@
   <img src="docs/img/hero.png" alt="A live top-down intersection packed with cars, buses and ambulances" width="860">
 </p>
 
-<h1 align="center">TrafficFlow</h1>
+<h1 align="center">UrbanFlow</h1>
 
 <p align="center">
   <b>A tiny city intersection that comes alive in your browser.</b><br>
@@ -40,7 +40,7 @@ So roughly thirty workers can all look at the road at once (because a photo can'
 I wanted it to feel like a friendly control room, not a spreadsheet. A bright, top-down cartoon town on the left, a calm panel of controls and live numbers on the right, and a little compass tucked in the corner so you always know which way is North.
 
 <p align="center">
-  <img src="docs/img/welcome.png" alt="The TrafficFlow welcome screen" width="720">
+  <img src="docs/img/welcome.png" alt="The UrbanFlow welcome screen" width="720">
 </p>
 
 A few **design patterns** I picked up, in plain words:

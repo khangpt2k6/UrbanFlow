@@ -1,3 +1,5 @@
+import { LogoMark } from './Logo';
+
 interface Props {
   onLaunch: () => void;
 }
@@ -20,9 +22,12 @@ export default function WelcomePage({ onLaunch }: Props) {
       <div className="grid-overlay" />
 
       <div className="welcome-inner">
-        <div className="welcome-badge">real-time simulation</div>
+        <div className="welcome-badge">real-time smart-city simulation</div>
+        <div className="welcome-logo">
+          <LogoMark size={72} />
+        </div>
         <h1 className="welcome-title">
-          Traffic<span>Flow</span>
+          Urban<span>Flow</span>
         </h1>
         <p className="welcome-tag">
           A concurrent traffic-control engine in Java, streamed live to your browser. Watch up to

@@ -3,6 +3,7 @@ import CanvasView from './render/CanvasView';
 import ControlPanel from './panels/ControlPanel';
 import StatsPanel from './panels/StatsPanel';
 import AlertsFeed from './panels/AlertsFeed';
+import { LogoMark } from './Logo';
 
 interface Props {
   onExit: () => void;
@@ -16,7 +17,8 @@ export default function SimView({ onExit }: Props) {
       <div className="stage">
         <div className="statusbar">
           <span className="brand" onClick={onExit} title="Back to start">
-            Traffic<span>Flow</span>
+            <LogoMark size={22} className="brand-mark" />
+            Urban<span>Flow</span>
           </span>
           <span className={`status-pill ${stream.connected ? 'on' : 'off'}`}>
             {stream.connected ? 'Server connected · WebSocket active' : 'Connecting…'}
