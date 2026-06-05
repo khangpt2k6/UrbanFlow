@@ -2,6 +2,7 @@ import type { SignalColor, SignalState, VehicleView } from '../types/snapshot';
 import { CROSSWALK_DEPTH, LANE_FIT, LAYOUT, STOP_SETBACK, roadHalfWidthM, worldToScreen, type View } from './layout';
 import { typeInfo } from './vehicleTypes';
 import { drawVehicleArt } from './vehicleArt';
+import { drawCompanyLogo, COMPANY_KEYS } from './companyLogos';
 
 // Bright, cartoon palette.
 const C = {
@@ -31,18 +32,18 @@ const ASPECT_DIM: Record<SignalColor, string> = { GREEN: '#1c3a2a', YELLOW: '#3d
 
 // Smallest drawn vehicle footprint (meters, scaled by the view). Bicycles/motorcycles are tiny
 // in reality, so without a floor they shrink to a few pixels; this keeps every vehicle legible.
-const MIN_VEHICLE_LEN_M = 3.9;
-const MIN_VEHICLE_WID_M = 1.7;
+// Smallest on-screen footprint, raised so the tiny two-wheelers (bicycle 1.8 m, motorcycle 2.2 m)
+// read as chunky little vehicles instead of near-invisible dots. Kept under a car so the order holds.
+const MIN_VEHICLE_LEN_M = 4.4;
+const MIN_VEHICLE_WID_M = 2.1;
 
-// Render-only size nudges (do NOT touch the backend-synced length, see vehicleTypes R1). Cars and
-// other small vehicles read as tiny next to buses and trucks, so we draw them a little longer and
-// chunkier. The width stays under the truck's 2.5 m and inside one lane, so size order and lane
-// fit still hold; the length grows only a few percent, well inside the following gap, so bodies
-// never overlap.
+// Render-only size nudges (do NOT touch the backend-synced length, see vehicleTypes R1). Cars read
+// as small next to buses and trucks, so we draw them a little longer and chunkier. The width stays
+// under the truck's 2.5 m and inside one lane, so size order and lane fit still hold; the length
+// grows only a few percent, well inside the following gap, so bodies never overlap. Bicycles and
+// motorcycles are not boosted here - the floor above already gives them a clearly visible body.
 const DRAW_BOOST: Record<number, { l: number; w: number }> = {
-  0: { l: 1.18, w: 1.0 }, // bicycle (width is floored anyway)
-  1: { l: 1.18, w: 1.0 }, // motorcycle
-  2: { l: 1.14, w: 1.3 }, // car
+  2: { l: 1.18, w: 1.3 }, // car
   3: { l: 1.12, w: 1.22 }, // SUV
 };
 
@@ -173,7 +174,7 @@ function makeRng(seed: number): () => number {
   };
 }
 
-interface Building { x: number; y: number; w: number; h: number; color: string; floors: number; roof: number; }
+interface Building { x: number; y: number; w: number; h: number; color: string; floors: number; roof: number; company?: string; }
 interface Greens { x: number; y: number; s: number; }
 
 // Pack dense building rows into the four corner blocks and line each footpath with street trees.
@@ -215,7 +216,36 @@ function buildCity(): { buildings: Building[]; greens: Greens[] } {
   }
   return { buildings, greens };
 }
+// Turn the towers nearest the crossing into recognisable tech HQs - one flagship per city block,
+// then a couple more - so the blocks read like a San Francisco tech street.
+function assignCompanies(buildings: Building[]) {
+  const dist2 = (b: Building) => b.x * b.x + b.y * b.y;
+  const big = (b: Building) => b.w >= 11 && b.h >= 11;
+  const flagships: Building[] = [];
+  for (const qx of [1, -1]) {
+    for (const qy of [1, -1]) {
+      let best: Building | null = null;
+      for (const b of buildings) {
+        if (Math.sign(b.x) !== qx || Math.sign(b.y) !== qy || !big(b)) continue;
+        if (!best || dist2(b) < dist2(best)) best = b;
+      }
+      if (best) flagships.push(best);
+    }
+  }
+  const more = buildings
+    .filter((b) => !flagships.includes(b) && big(b))
+    .sort((a, b) => dist2(a) - dist2(b))
+    .slice(0, COMPANY_KEYS.length - flagships.length);
+  [...flagships, ...more].forEach((b, i) => {
+    b.company = COMPANY_KEYS[i % COMPANY_KEYS.length];
+    b.w = Math.max(b.w, 16);
+    b.h = Math.max(b.h, 16);
+    b.floors = Math.max(b.floors, 8); // a touch taller, so the HQ stands out
+  });
+}
+
 const CITY = buildCity();
+assignCompanies(CITY.buildings);
 
 // ----------------------------------------------------------------- footpaths + cycle tracks
 function drawSidewalks(ctx: CanvasRenderingContext2D, view: View) {
@@ -431,7 +461,11 @@ function drawBuilding(ctx: CanvasRenderingContext2D, view: View, b: Building) {
   // parapet rim
   ctx.lineWidth = 1; ctx.strokeStyle = shade(b.color, 0.2);
   roundRect(ctx, cx - wp / 2 + 2.5, cy - hp / 2 + 2.5, wp - 5, hp - 5, Math.max(1, r - 1)); ctx.stroke();
-  drawRoofDetail(ctx, cx, cy, wp, hp, b);
+  if (b.company) {
+    drawCompanyLogo(ctx, cx, cy, Math.min(wp, hp) * 0.74, b.company);
+  } else {
+    drawRoofDetail(ctx, cx, cy, wp, hp, b);
+  }
 }
 
 function drawRoofDetail(ctx: CanvasRenderingContext2D, cx: number, cy: number, wp: number, hp: number, b: Building) {

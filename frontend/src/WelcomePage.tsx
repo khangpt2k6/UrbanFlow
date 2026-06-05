@@ -4,15 +4,6 @@ interface Props {
   onLaunch: () => void;
 }
 
-const STATS = [
-  { value: '120', label: 'vehicles' },
-  { value: '9', label: 'types' },
-  { value: '24', label: 'lanes' },
-  { value: '30', label: 'threads' },
-  { value: '2,100+', label: 'updates/sec' },
-  { value: '0', label: 'collisions' },
-];
-
 export default function WelcomePage({ onLaunch }: Props) {
   return (
     <div className="welcome">
@@ -33,15 +24,6 @@ export default function WelcomePage({ onLaunch }: Props) {
           A concurrent traffic-control engine in Java, streamed live to your browser. Watch up to
           120 vehicles negotiate a signalized intersection with zero collisions, in real time.
         </p>
-
-        <div className="welcome-stats">
-          {STATS.map((s) => (
-            <div className="welcome-stat" key={s.label}>
-              <div className="welcome-stat-value">{s.value}</div>
-              <div className="welcome-stat-label">{s.label}</div>
-            </div>
-          ))}
-        </div>
 
         <button className="launch-btn" onClick={onLaunch}>
           <span>Launch simulation</span>

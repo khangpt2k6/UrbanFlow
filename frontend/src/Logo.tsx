@@ -56,7 +56,7 @@ export function Logo({ size, fontSize = 20, className }: LogoProps) {
   return (
     <span className={`uf-logo ${className ?? ''}`} style={{ display: 'inline-flex', alignItems: 'center', gap: fontSize * 0.42 }}>
       <LogoMark size={size ?? Math.round(fontSize * 1.5)} />
-      <span className="uf-word" style={{ fontSize, fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1 }}>
+      <span className="uf-word" style={{ fontSize, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1 }}>
         Urban<span className="uf-word-accent">Flow</span>
       </span>
     </span>
