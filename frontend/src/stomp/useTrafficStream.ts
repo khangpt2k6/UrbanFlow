@@ -6,6 +6,15 @@ import type { AlertMessage, SimulationStats, WorldSnapshot } from '../types/snap
 
 const WS_URL = 'http://localhost:8080/ws';
 
+/** How long an alert toast stays on screen before it auto-dismisses (ms). */
+const ALERT_TTL_MS = 5000;
+
+/** An alert enriched with a stable id and the client-side time it arrived (for TTL expiry). */
+export interface UiAlert extends AlertMessage {
+  id: number;
+  rxAt: number;
+}
+
 export interface ControlPayload {
   type: string;
   value?: number;
@@ -23,7 +32,7 @@ export interface TrafficStream {
   lastArrivalRef: MutableRefObject<number>;
   intervalRef: MutableRefObject<number>;
   stats: SimulationStats | null;
-  alerts: AlertMessage[];
+  alerts: UiAlert[];
   connected: boolean;
   send: (payload: ControlPayload) => void;
 }
@@ -39,9 +48,10 @@ export function useTrafficStream(): TrafficStream {
   const lastArrivalRef = useRef<number>(0);
   const intervalRef = useRef<number>(33);
   const clientRef = useRef<Client | null>(null);
+  const alertSeq = useRef(0);
 
   const [stats, setStats] = useState<SimulationStats | null>(null);
-  const [alerts, setAlerts] = useState<AlertMessage[]>([]);
+  const [alerts, setAlerts] = useState<UiAlert[]>([]);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
@@ -71,7 +81,8 @@ export function useTrafficStream(): TrafficStream {
       });
       client.subscribe('/topic/alerts', (msg) => {
         const a = JSON.parse(msg.body) as AlertMessage;
-        setAlerts((prev) => [a, ...prev].slice(0, 40));
+        const item: UiAlert = { ...a, id: alertSeq.current++, rxAt: performance.now() };
+        setAlerts((prev) => [item, ...prev].slice(0, 12));
       });
     };
     client.onWebSocketClose = () => {
@@ -87,6 +98,18 @@ export function useTrafficStream(): TrafficStream {
     return () => {
       void client.deactivate();
     };
+  }, []);
+
+  // Auto-dismiss old alert toasts so they fade out instead of piling up forever.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const cutoff = performance.now() - ALERT_TTL_MS;
+      setAlerts((prev) => {
+        const next = prev.filter((a) => a.rxAt > cutoff);
+        return next.length === prev.length ? prev : next;
+      });
+    }, 500);
+    return () => window.clearInterval(timer);
   }, []);
 
   const send = useCallback((payload: ControlPayload) => {

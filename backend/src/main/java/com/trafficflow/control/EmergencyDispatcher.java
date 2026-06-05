@@ -76,4 +76,10 @@ public class EmergencyDispatcher {
     public Approach activeApproach() {
         return activeApproach;
     }
+
+    /** Clear any active preemption so a world reset starts from the normal signal cycle. */
+    public void reset() {
+        activeApproach = null;
+        signals.requestPreempt(null);
+    }
 }

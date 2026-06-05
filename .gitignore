@@ -18,3 +18,7 @@ frontend/.vite/
 Thumbs.db
 
 .playwright-mcp/
+
+# Local working notes / verification artifacts
+docs/superpowers/
+verify-*.png

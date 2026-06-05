@@ -23,7 +23,19 @@ public class SimulationControls {
     private volatile double allRedSeconds;
     private volatile boolean paused = false;
 
+    private final SimulationProperties props;
+
     public SimulationControls(SimulationProperties props) {
+        this.props = props;
+        resetToDefaults();
+    }
+
+    /**
+     * Restore every live setting to its startup default. Used by the engine's world reset so that
+     * pressing Reset truly returns the simulation to its original state (speed 1x, default density
+     * and signal timings, and not paused).
+     */
+    public void resetToDefaults() {
         this.speedMultiplier = 1.0;
         this.targetVehicles.set(props.getTargetVehicles());
         this.nsGreenSeconds = props.getNsGreenSeconds();
@@ -31,6 +43,7 @@ public class SimulationControls {
         this.leftGreenSeconds = 5.0;
         this.yellowSeconds = props.getYellowSeconds();
         this.allRedSeconds = props.getAllRedSeconds();
+        this.paused = false;
     }
 
     public double getSpeedMultiplier() { return speedMultiplier; }

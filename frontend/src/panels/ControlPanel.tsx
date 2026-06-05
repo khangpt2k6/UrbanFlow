@@ -69,6 +69,21 @@ export default function ControlPanel({ send, connected }: Props) {
     send({ type: 'setPaused', paused: next });
   };
 
+  // Reset clears the world on the backend AND returns these controls to their defaults, so the
+  // panel never drifts out of sync with the freshly reset engine (e.g. a stuck "Start" label).
+  const resetAll = () => {
+    setSpeed(1);
+    setDensity(45);
+    setMode('avg');
+    setNsGreen(15);
+    setEwGreen(15);
+    setLeftGreen(5);
+    setYellow(3);
+    setAllRed(2);
+    setPaused(false);
+    send({ type: 'reset' });
+  };
+
   return (
     <div className="card control">
       <div className="card-head">
@@ -105,7 +120,7 @@ export default function ControlPanel({ send, connected }: Props) {
       </button>
 
       <div className="btn-row">
-        <button className="btn" onClick={() => send({ type: 'reset' })}>↺ Reset</button>
+        <button className="btn" onClick={resetAll}>↺ Reset</button>
         <button className="btn ghost" onClick={() => setShowSignals((s) => !s)}>
           Signals {showSignals ? '▾' : '▸'}
         </button>

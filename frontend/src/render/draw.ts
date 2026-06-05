@@ -23,6 +23,11 @@ const C = {
 const ASPECT: Record<SignalColor, string> = { GREEN: '#28d17c', YELLOW: '#ffcf33', RED: '#ff5a52' };
 const ASPECT_DIM: Record<SignalColor, string> = { GREEN: '#1c3a2a', YELLOW: '#3d3520', RED: '#3e2220' };
 
+// Smallest drawn vehicle footprint (meters, scaled by the view). Bicycles/motorcycles are tiny
+// in reality, so without a floor they shrink to a few pixels; this keeps every vehicle legible.
+const MIN_VEHICLE_LEN_M = 3.4;
+const MIN_VEHICLE_WID_M = 1.5;
+
 export function drawScene(
   ctx: CanvasRenderingContext2D,
   view: View,
@@ -53,7 +58,7 @@ export function drawScene(
 // brand + status pill and the bottom-right holds the alert toasts, so the lower-left
 // is the only HUD-free corner. World frame is +x East, +y North with a flipped screen
 // y, so North=up, South=down, East=right, West=left.
-// Labels use Vietnamese cardinals: B (Bac/N), N (Nam/S), Đ (Dong/E), T (Tay/W).
+// Labels use English cardinals: N (up), S (down), E (right), W (left).
 function drawCompass(ctx: CanvasRenderingContext2D, canvasW: number, canvasH: number) {
   const r = Math.max(30, Math.min(canvasW, canvasH) * 0.055);
   const m = r + Math.max(14, r * 0.5); // keep the dial clear of the corner
@@ -116,10 +121,10 @@ function drawCompass(ctx: CanvasRenderingContext2D, canvasW: number, canvasH: nu
   const lr = r * 0.82;
   ctx.font = `bold ${Math.round(r * 0.34)}px system-ui, sans-serif`;
   const labels: [string, number, number, string][] = [
-    ['B', cx, cy - lr, '#d63b34'],
-    ['N', cx, cy + lr, '#3a4150'],
-    ['Đ', cx + lr, cy, '#3a4150'],
-    ['T', cx - lr, cy, '#3a4150'],
+    ['N', cx, cy - lr, '#d63b34'],
+    ['S', cx, cy + lr, '#3a4150'],
+    ['E', cx + lr, cy, '#3a4150'],
+    ['W', cx - lr, cy, '#3a4150'],
   ];
   for (const [t, x, y, col] of labels) {
     ctx.fillStyle = col;
@@ -422,8 +427,13 @@ function drawVehicle(ctx: CanvasRenderingContext2D, view: View, v: VehicleView, 
 
   // Footprint in pixels: length fills the real front-to-rear slot (and bends through turns),
   // width is the true vehicle width clamped to one lane. The body is crisp canvas vector art.
-  const L = Math.max(chord, info.length * view.scale);
-  const W = Math.min(info.width, LANE_FIT * LAYOUT.laneWidth) * view.scale;
+  // A minimum on-screen footprint keeps the smallest vehicles (bicycle 1.8 m, motorcycle 2.2 m)
+  // readable as little vehicles instead of near-invisible dots at this zoom.
+  const L = Math.max(chord, info.length * view.scale, MIN_VEHICLE_LEN_M * view.scale);
+  const W = Math.max(
+    Math.min(info.width, LANE_FIT * LAYOUT.laneWidth) * view.scale,
+    MIN_VEHICLE_WID_M * view.scale,
+  );
 
   ctx.save();
   ctx.translate(cx, cy);

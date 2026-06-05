@@ -10,6 +10,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -36,6 +37,7 @@ public class SignalController {
     private final SimulationControls controls;
     private final List<GreenGroup> ring;
     private final AtomicReference<Approach> preemptRequest = new AtomicReference<>(null);
+    private final AtomicBoolean resetRequested = new AtomicBoolean(false);
     private final AtomicReference<SignalState> state;
 
     /** Timing the engine needs to gate box entry: time left on the current green, and the
@@ -83,6 +85,15 @@ public class SignalController {
         preemptRequest.set(approach);
     }
 
+    /**
+     * Ask the machine to restart from its initial phase (NS-through green, fresh clock). The flag
+     * is consumed on the signal thread inside {@link #stepTo(long)} so the machine's plain fields
+     * keep their single-writer ownership and never race with a world reset on the clock thread.
+     */
+    public void requestReset() {
+        resetRequested.set(true);
+    }
+
     public Approach preemptApproach() {
         return preemptRequest.get();
     }
@@ -109,6 +120,18 @@ public class SignalController {
      * the signal thread; the first call only seeds the clock.
      */
     public void stepTo(long simNowMs) {
+        if (resetRequested.compareAndSet(true, false)) {
+            preemptRequest.set(null);
+            ringIndex = 0;
+            current = ring.get(0);
+            sub = Sub.GREEN;
+            subElapsedMs = 0;
+            lastSimMs = simNowMs;
+            initialized = true;
+            state.set(buildState());
+            timing.set(computeTiming());
+            return;
+        }
         if (!initialized) {
             lastSimMs = simNowMs;
             initialized = true;

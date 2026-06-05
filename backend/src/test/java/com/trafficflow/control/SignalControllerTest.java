@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.EnumSet;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -96,6 +97,31 @@ class SignalControllerTest {
             }
         }
         assertTrue(eastFullyGreen, "preemption should serve the EAST approach green with others red");
+    }
+
+    @Test
+    void requestResetRestartsCleanlyAfterTheClockIsZeroed() {
+        // Run the machine well into a cycle so its internal sim-clock is large.
+        for (long t = 0; t <= 50_000; t += 50) {
+            signals.stepTo(t);
+        }
+        // Simulate a world reset: the engine zeroes the sim clock, then asks the signals to restart.
+        signals.requestReset();
+        signals.stepTo(0); // first post-reset tick, with the freshly zeroed clock
+
+        // Regression for the Reset freeze: before the fix, lastSimMs stayed at ~50_000, so every
+        // stepTo(small) saw a negative delta and the lights froze forever. After reset the machine
+        // must be back at its first green and able to advance again from t=0.
+        assertEquals("NS_THROUGH", signals.currentState().phase());
+        boolean advanced = false;
+        for (long t = 0; t <= 60_000; t += 50) {
+            signals.stepTo(t);
+            assertConflictFree(signals.currentState());
+            if (!signals.currentState().phase().equals("NS_THROUGH")) {
+                advanced = true;
+            }
+        }
+        assertTrue(advanced, "signals must cycle again after a reset with a zeroed clock");
     }
 
     @Test

@@ -235,6 +235,11 @@ public class SimulationEngine {
                 stepAccumulator = 0; // nobody connected: stay idle (empty road), no broadcast
                 return;
             }
+            // Apply queued control commands every tick - even while paused - so Stop is reversible
+            // (the un-pause command must be processed while the engine is paused) and Reset / speed
+            // / density changes take effect immediately. physicsStep also drains, harmlessly, when
+            // running; this extra drain is what lets a paused engine ever see "setPaused(false)".
+            drainCommands();
             if (controls.isPaused()) {
                 broadcast(buildSnapshot());
                 return;
@@ -262,7 +267,7 @@ public class SimulationEngine {
     }
 
     private void emergencyTick() {
-        if (!clientsConnected) {
+        if (!clientsConnected || controls.isPaused()) {
             return;
         }
         String alert = emergencyDispatcher.update(publishedStates.get());
@@ -272,8 +277,8 @@ public class SimulationEngine {
     }
 
     private void spawnerTick() {
-        if (!clientsConnected) {
-            return; // don't accumulate vehicles while nobody is connected
+        if (!clientsConnected || controls.isPaused()) {
+            return; // don't accumulate vehicles while nobody is connected or while paused
         }
         int n = spawner.spawnCount(publishedStates.get().size());
         for (int i = 0; i < n; i++) {
@@ -648,6 +653,13 @@ public class SimulationEngine {
         stepAccumulator = 0;
         publishedStates.set(List.of());
         statsAggregator.reset();
+        // Restore the signal machine, emergency preemption, and live controls to their initial
+        // state. Without this the signal controller keeps a stale sim-clock and freezes (its
+        // delta goes negative the moment simClockMs is zeroed), so the lights die and traffic
+        // piles up at dead reds; resetToDefaults() also clears any lingering pause.
+        controls.resetToDefaults();
+        signalController.requestReset();
+        emergencyDispatcher.reset();
     }
 
     // ---------------------------------------------------------------------------------------

@@ -65,6 +65,18 @@ class EmergencyDispatcherTest {
     }
 
     @Test
+    void resetClearsActivePreemption() {
+        VehicleState ambulance = new VehicleState(1, VehicleType.AMBULANCE,
+                new LaneId(Approach.EAST, Movement.THROUGH), layout.stopLineS() - 30.0, 12.0);
+        dispatcher.update(List.of(ambulance));
+        assertEquals(Approach.EAST, signals.preemptApproach());
+
+        dispatcher.reset();
+        assertNull(signals.preemptApproach());
+        assertNull(dispatcher.activeApproach());
+    }
+
+    @Test
     void picksTheNearestEmergencyWhenSeveralArePresent() {
         VehicleState far = new VehicleState(1, VehicleType.AMBULANCE,
                 new LaneId(Approach.NORTH, Movement.THROUGH), layout.stopLineS() - 70.0, 12.0);
