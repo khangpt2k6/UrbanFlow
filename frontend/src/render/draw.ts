@@ -2,7 +2,6 @@ import type { SignalColor, SignalState, VehicleView } from '../types/snapshot';
 import { CROSSWALK_DEPTH, LANE_FIT, LAYOUT, STOP_SETBACK, roadHalfWidthM, worldToScreen, type View } from './layout';
 import { typeInfo } from './vehicleTypes';
 import { drawVehicleArt } from './vehicleArt';
-import { drawCompanyLogo, COMPANY_KEYS } from './companyLogos';
 
 // Bright, cartoon palette.
 const C = {
@@ -174,7 +173,7 @@ function makeRng(seed: number): () => number {
   };
 }
 
-interface Building { x: number; y: number; w: number; h: number; color: string; floors: number; roof: number; company?: string; }
+interface Building { x: number; y: number; w: number; h: number; color: string; floors: number; roof: number; }
 interface Greens { x: number; y: number; s: number; }
 
 // Pack dense building rows into the four corner blocks and line each footpath with street trees.
@@ -216,36 +215,7 @@ function buildCity(): { buildings: Building[]; greens: Greens[] } {
   }
   return { buildings, greens };
 }
-// Turn the towers nearest the crossing into recognisable tech HQs - one flagship per city block,
-// then a couple more - so the blocks read like a San Francisco tech street.
-function assignCompanies(buildings: Building[]) {
-  const dist2 = (b: Building) => b.x * b.x + b.y * b.y;
-  const big = (b: Building) => b.w >= 11 && b.h >= 11;
-  const flagships: Building[] = [];
-  for (const qx of [1, -1]) {
-    for (const qy of [1, -1]) {
-      let best: Building | null = null;
-      for (const b of buildings) {
-        if (Math.sign(b.x) !== qx || Math.sign(b.y) !== qy || !big(b)) continue;
-        if (!best || dist2(b) < dist2(best)) best = b;
-      }
-      if (best) flagships.push(best);
-    }
-  }
-  const more = buildings
-    .filter((b) => !flagships.includes(b) && big(b))
-    .sort((a, b) => dist2(a) - dist2(b))
-    .slice(0, COMPANY_KEYS.length - flagships.length);
-  [...flagships, ...more].forEach((b, i) => {
-    b.company = COMPANY_KEYS[i % COMPANY_KEYS.length];
-    b.w = Math.max(b.w, 16);
-    b.h = Math.max(b.h, 16);
-    b.floors = Math.max(b.floors, 8); // a touch taller, so the HQ stands out
-  });
-}
-
 const CITY = buildCity();
-assignCompanies(CITY.buildings);
 
 // ----------------------------------------------------------------- footpaths + cycle tracks
 function drawSidewalks(ctx: CanvasRenderingContext2D, view: View) {
@@ -461,11 +431,7 @@ function drawBuilding(ctx: CanvasRenderingContext2D, view: View, b: Building) {
   // parapet rim
   ctx.lineWidth = 1; ctx.strokeStyle = shade(b.color, 0.2);
   roundRect(ctx, cx - wp / 2 + 2.5, cy - hp / 2 + 2.5, wp - 5, hp - 5, Math.max(1, r - 1)); ctx.stroke();
-  if (b.company) {
-    drawCompanyLogo(ctx, cx, cy, Math.min(wp, hp) * 0.74, b.company);
-  } else {
-    drawRoofDetail(ctx, cx, cy, wp, hp, b);
-  }
+  drawRoofDetail(ctx, cx, cy, wp, hp, b);
 }
 
 function drawRoofDetail(ctx: CanvasRenderingContext2D, cx: number, cy: number, wp: number, hp: number, b: Building) {
