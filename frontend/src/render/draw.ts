@@ -18,6 +18,12 @@ const C = {
   stroke: 'rgba(28,32,40,0.6)',
   housing: '#23262e',
   housingEdge: '#0d0f14',
+  sidewalk: '#cdd2da',
+  sidewalkLine: 'rgba(120,128,140,0.5)',
+  curb: '#9aa2af',
+  bikeLane: '#2f8f63',
+  bikeLaneEdge: 'rgba(255,255,255,0.8)',
+  laneArrow: 'rgba(255,255,255,0.92)',
 };
 
 const ASPECT: Record<SignalColor, string> = { GREEN: '#28d17c', YELLOW: '#ffcf33', RED: '#ff5a52' };
@@ -43,8 +49,10 @@ export function drawScene(
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, canvasW, canvasH);
 
-  drawScenery(ctx, view);
   drawRoads(ctx, view);
+  drawSidewalks(ctx, view);
+  drawBuildings(ctx, view);
+  drawGreenery(ctx, view);
   drawCrosswalks(ctx, view);
   drawLaneMarkings(ctx, view);
   drawStopLines(ctx, view);
@@ -133,115 +141,185 @@ function drawCompass(ctx: CanvasRenderingContext2D, canvasW: number, canvasH: nu
   ctx.restore();
 }
 
-// ----------------------------------------------------------------- scenery
-let sceneryWarned = false;
+// ----------------------------------------------------------------- city layout
+// Geometry shared by the roads, footpaths and building blocks.
+const RH = roadHalfWidthM();                   // road half-width (one carriageway)
+const ROAD_EDGE = RH + 0.8;                     // outer kerb of the carriageway
+const SIDEWALK_W = 6.2;                          // footpath width along each road
+const SIDEWALK_OUT = ROAD_EDGE + SIDEWALK_W;     // outer edge of the footpath
+const BIKE_W = 1.9;                              // protected cycle track (road side of the path)
+const BLOCK_IN = SIDEWALK_OUT + 2.4;             // where the city blocks begin
+const FAR = LAYOUT.approachLength + LAYOUT.half;
 
-function drawScenery(ctx: CanvasRenderingContext2D, view: View) {
-  // Houses / buildings (x, y, w, h, color).
-  const buildings: [number, number, number, number, string][] = [
-    [32, 42, 16, 22, '#6f93c9'], [56, 27, 14, 16, '#e0a93b'],
-    [34, -40, 16, 26, '#9aa7b8'], [57, -25, 14, 16, '#d98b6a'],
-    [-36, -30, 30, 14, '#c98a5a'], [-25, 24, 12, 12, '#d98b6a'],
-  ];
-  for (const [x, y, w, h, c] of buildings) drawBuilding(ctx, view, x, y, w, h, c);
-
-  const pond = { x: -44, y: 44, rx: 18, ry: 12 };
-  drawPond(ctx, view, pond.x, pond.y, pond.rx * 2, pond.ry * 2);
-
-  // Keep greenery off the rooftops and out of the pond, and flowers out of any tree's
-  // canopy (else it looks like the tree bloomed). Enforced in code so a future coordinate
-  // tweak can never drop a tree onto a building again.
-  const onBuilding = (x: number, y: number, pad: number) =>
-    buildings.some(([bx, by, bw, bh]) => Math.abs(x - bx) < bw / 2 + pad && Math.abs(y - by) < bh / 2 + pad);
-  const inPond = (x: number, y: number, pad: number) => {
-    const dx = (x - pond.x) / (pond.rx + pad), dy = (y - pond.y) / (pond.ry + pad);
-    return dx * dx + dy * dy < 1;
+// A tiny seeded PRNG so the skyline is generated ONCE and is identical every frame (no flicker).
+function makeRng(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
   };
+}
 
-  // Lots of trees of varied sizes for a lush, park-like feel.
-  const treesRaw: [number, number, number][] = [
-    [22, 62, 1.1], [40, 70, 0.8], [52, 58, 1.2], [64, 46, 0.9], [70, 64, 1.0], [16, 40, 0.9],
-    [24, -56, 1.1], [42, -64, 0.85], [54, -50, 1.2], [66, -42, 0.9], [72, -60, 1.0], [18, -40, 0.9],
-    [-24, -52, 1.1], [-42, -62, 0.9], [-54, -44, 1.2], [-64, -56, 0.85], [-30, -68, 1.0], [-70, -40, 0.8],
-    [-58, 56, 1.1], [-30, 60, 0.9], [-66, 38, 1.0], [-48, 66, 0.85], [-72, 60, 0.8], [-20, 70, 0.7],
-  ];
-  const trees = treesRaw.filter(([x, y]) => !onBuilding(x, y, 2) && !inPond(x, y, 2));
-  for (const [x, y, s] of trees) drawTree(ctx, view, x, y, s);
+interface Building { x: number; y: number; w: number; h: number; color: string; floors: number; roof: number; }
+interface Greens { x: number; y: number; s: number; }
 
-  const treeClear = (x: number, y: number) =>
-    !trees.some(([tx, ty, ts]) => Math.hypot(x - tx, y - ty) < 6 * ts);
+// Pack dense building rows into the four corner blocks and line each footpath with street trees.
+// Deterministic (seeded), so the city is stable frame to frame.
+function buildCity(): { buildings: Building[]; greens: Greens[] } {
+  const rng = makeRng(1337);
+  const buildings: Building[] = [];
+  const greens: Greens[] = [];
+  const palette = ['#7d97c4', '#c98a5a', '#e0a93b', '#8f9db4', '#cf7b63', '#9aa7b8', '#b58a84', '#6f93c9', '#d9a441', '#7fa3a0'];
+  const cell = 22;
+  const end = 130;
+  for (const qx of [1, -1]) {
+    for (const qy of [1, -1]) {
+      for (let ox = BLOCK_IN; ox < end; ox += cell) {
+        for (let oy = BLOCK_IN; oy < end; oy += cell) {
+          const gap = 3.4 + rng() * 2.4;
+          const w = cell - gap - rng() * 2.5;
+          const h = cell - gap - rng() * 2.5;
+          const cx = qx * (ox + (cell - gap) / 2);
+          const cy = qy * (oy + (cell - gap) / 2);
+          if (rng() < 0.1) {                     // occasional green pocket between towers
+            greens.push({ x: cx, y: cy, s: 1.0 + rng() * 0.5 });
+            continue;
+          }
+          buildings.push({
+            x: cx, y: cy, w, h,
+            color: palette[Math.floor(rng() * palette.length)],
+            floors: 3 + Math.floor(rng() * 6),
+            roof: Math.floor(rng() * 3),
+          });
+        }
+      }
+      // street trees just outside the footpath, down each road face of the block
+      for (let d = 30; d < 78; d += 11) {
+        greens.push({ x: qx * (SIDEWALK_OUT + 1.1), y: qy * d, s: 0.62 + rng() * 0.16 });
+        greens.push({ x: qx * d, y: qy * (SIDEWALK_OUT + 1.1), s: 0.62 + rng() * 0.16 });
+      }
+    }
+  }
+  return { buildings, greens };
+}
+const CITY = buildCity();
 
-  // Bushes and flower clusters scatter green/colour across the lawns.
-  const bushesRaw: [number, number][] = [
-    [16, 50], [60, 36], [44, -38], [20, -44], [-18, -40], [-48, -54], [-20, 52], [-60, 48], [70, 30], [-70, 28],
-  ];
-  const bushes = bushesRaw.filter(([x, y]) => !onBuilding(x, y, 1.5) && !inPond(x, y, 1));
-  for (const [x, y] of bushes) drawBush(ctx, view, x, y);
+// ----------------------------------------------------------------- footpaths + cycle tracks
+function drawSidewalks(ctx: CanvasRenderingContext2D, view: View) {
+  const a = ROAD_EDGE, b = SIDEWALK_OUT;
+  // concrete footpath: an L of two strips hugging each corner, which together frame the roads
+  ctx.fillStyle = C.sidewalk;
+  for (const qx of [1, -1]) {
+    for (const qy of [1, -1]) {
+      const xIn = qx > 0 ? a : -b, xOut = qx > 0 ? b : -a;
+      const yIn = qy > 0 ? a : -b, yOut = qy > 0 ? b : -a;
+      fillWorldRect(ctx, view, xIn, qy > 0 ? a : -FAR, xOut, qy > 0 ? FAR : -a);
+      fillWorldRect(ctx, view, qx > 0 ? a : -FAR, yIn, qx > 0 ? FAR : -a, yOut);
+    }
+  }
+  // protected green cycle track on the road side of every footpath
+  ctx.fillStyle = C.bikeLane;
+  for (const s of [1, -1]) {
+    fillWorldRect(ctx, view, s > 0 ? a : -a - BIKE_W, a, s > 0 ? a + BIKE_W : -a, FAR);
+    fillWorldRect(ctx, view, s > 0 ? a : -a - BIKE_W, -FAR, s > 0 ? a + BIKE_W : -a, -a);
+    fillWorldRect(ctx, view, a, s > 0 ? a : -a - BIKE_W, FAR, s > 0 ? a + BIKE_W : -a);
+    fillWorldRect(ctx, view, -FAR, s > 0 ? a : -a - BIKE_W, -a, s > 0 ? a + BIKE_W : -a);
+  }
+  // kerb line at the carriageway, dashed line at the cycle track edge, seam at the footpath edge
+  ctx.strokeStyle = C.curb; ctx.lineWidth = Math.max(1.5, 0.22 * view.scale);
+  strokeRing(ctx, view, a);
+  ctx.strokeStyle = C.bikeLaneEdge; ctx.lineWidth = Math.max(1, 0.12 * view.scale);
+  ctx.setLineDash([1.4 * view.scale, 1.2 * view.scale]);
+  strokeRing(ctx, view, a + BIKE_W);
+  ctx.setLineDash([]);
+  drawBikeGlyphs(ctx, view, a + BIKE_W / 2);
+  ctx.strokeStyle = C.sidewalkLine; ctx.lineWidth = Math.max(1, 0.1 * view.scale);
+  strokeRing(ctx, view, b);
+}
 
-  const flowersRaw: [number, number][] = [
-    [18, 58], [50, 64], [28, -50], [58, -58], [-26, -60], [-52, 60], [-38, 52], [62, 52],
-    [14, 30], [14, -30], [-14, 44], [-14, -30],
-  ];
-  const flowers = flowersRaw.filter(([x, y]) => !onBuilding(x, y, 1) && !inPond(x, y, 1) && treeClear(x, y));
-  for (const [x, y] of flowers) drawFlowers(ctx, view, x, y);
-
-  if (!sceneryWarned) {
-    sceneryWarned = true;
-    const hidden = (treesRaw.length - trees.length) + (bushesRaw.length - bushes.length) + (flowersRaw.length - flowers.length);
-    if (hidden > 0)
-      console.warn(`[scenery] ${hidden} item(s) overlapped a building/pond/tree and were hidden. Move their coordinates in drawScenery().`);
+// Stroke a square "ring" at world distance d on all four road faces, running along the approaches
+// and skipping across the box, so it traces the kerbs without crossing the intersection.
+function strokeRing(ctx: CanvasRenderingContext2D, view: View, d: number) {
+  for (const s of [1, -1]) {
+    line(ctx, view, s * d, d, s * d, FAR);
+    line(ctx, view, s * d, -FAR, s * d, -d);
+    line(ctx, view, d, s * d, FAR, s * d);
+    line(ctx, view, -FAR, s * d, -d, s * d);
   }
 }
 
-function drawBush(ctx: CanvasRenderingContext2D, view: View, x: number, y: number) {
-  const [sx, sy] = worldToScreen(x, y, view);
-  const r = Math.max(3, 1.8 * view.scale);
-  ctx.fillStyle = 'rgba(30,40,30,0.14)';
-  ctx.beginPath(); ctx.ellipse(sx + 2, sy + r * 0.5, r * 1.1, r * 0.45, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#56b863';
-  ctx.beginPath(); ctx.arc(sx - r * 0.5, sy, r * 0.7, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(sx + r * 0.5, sy, r * 0.7, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#67ca72';
-  ctx.beginPath(); ctx.arc(sx, sy - r * 0.3, r * 0.75, 0, Math.PI * 2); ctx.fill();
+function drawBikeGlyphs(ctx: CanvasRenderingContext2D, view: View, lat: number) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  for (let d = 26; d < 80; d += 16) {
+    bikeGlyph(ctx, view, lat, d, true); bikeGlyph(ctx, view, -lat, d, true);
+    bikeGlyph(ctx, view, lat, -d, true); bikeGlyph(ctx, view, -lat, -d, true);
+    bikeGlyph(ctx, view, d, lat, false); bikeGlyph(ctx, view, -d, lat, false);
+    bikeGlyph(ctx, view, d, -lat, false); bikeGlyph(ctx, view, -d, -lat, false);
+  }
 }
 
-function drawFlowers(ctx: CanvasRenderingContext2D, view: View, x: number, y: number) {
+// A simple two-wheel bicycle pictogram, oriented along the lane.
+function bikeGlyph(ctx: CanvasRenderingContext2D, view: View, x: number, y: number, vertical: boolean) {
   const [sx, sy] = worldToScreen(x, y, view);
-  const r = Math.max(1.5, 0.55 * view.scale);
-  const cols = ['#ff6b9d', '#ffd23f', '#ff8a5b', '#c77dff'];
-  const spots: [number, number][] = [[0, 0], [r * 2.4, r * 0.8], [r * 1.2, -r * 1.8], [-r * 1.8, r * 1.2], [-r * 1.4, -r * 1.4]];
-  spots.forEach((p, i) => {
-    ctx.fillStyle = cols[i % cols.length];
-    ctx.beginPath(); ctx.arc(sx + p[0], sy + p[1], r, 0, Math.PI * 2); ctx.fill();
-  });
+  const r = Math.max(2, 0.42 * view.scale);
+  ctx.lineWidth = Math.max(1, r * 0.34);
+  const wheel = (ox: number, oy: number) => { ctx.beginPath(); ctx.arc(sx + ox, sy + oy, r, 0, Math.PI * 2); ctx.stroke(); };
+  if (vertical) { wheel(0, -r * 1.7); wheel(0, r * 1.7); } else { wheel(-r * 1.7, 0); wheel(r * 1.7, 0); }
 }
 
-function drawBuilding(ctx: CanvasRenderingContext2D, view: View, x: number, y: number, w: number, h: number, color: string) {
-  const [sx, sy] = worldToScreen(x, y, view);
-  const wp = w * view.scale;
-  const hp = h * view.scale;
+// ----------------------------------------------------------------- buildings + greenery
+function drawBuildings(ctx: CanvasRenderingContext2D, view: View) {
+  for (const b of CITY.buildings) drawBuilding(ctx, view, b);
+}
+
+function drawGreenery(ctx: CanvasRenderingContext2D, view: View) {
+  for (const g of CITY.greens) drawTree(ctx, view, g.x, g.y, g.s);
+}
+
+// A flat-roofed tower seen from above. A darker copy of the footprint, pushed toward the light,
+// fakes the walls so taller buildings (more floors) read as taller; a soft shadow grounds it.
+function drawBuilding(ctx: CanvasRenderingContext2D, view: View, b: Building) {
+  const [cx, cy] = worldToScreen(b.x, b.y, view);
+  const wp = b.w * view.scale, hp = b.h * view.scale;
+  const r = Math.min(5, wp * 0.14, hp * 0.14);
+  const lift = (1.6 + b.floors * 1.05) * Math.max(0.6, view.scale / 6.3);
+  // ground shadow (down-right)
+  ctx.fillStyle = 'rgba(16,24,36,0.20)';
+  roundRect(ctx, cx - wp / 2 + lift * 0.5 + 2, cy - hp / 2 + lift * 0.72 + 3, wp, hp, r); ctx.fill();
+  // extruded walls
+  ctx.fillStyle = shade(b.color, -0.36);
+  roundRect(ctx, cx - wp / 2 + lift * 0.5, cy - hp / 2 + lift * 0.72, wp, hp, r); ctx.fill();
+  // roof
+  roundRect(ctx, cx - wp / 2, cy - hp / 2, wp, hp, r);
+  ctx.fillStyle = b.color; ctx.fill();
+  ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(18,26,38,0.5)'; ctx.stroke();
+  // parapet rim
+  ctx.lineWidth = 1; ctx.strokeStyle = shade(b.color, 0.2);
+  roundRect(ctx, cx - wp / 2 + 2.5, cy - hp / 2 + 2.5, wp - 5, hp - 5, Math.max(1, r - 1)); ctx.stroke();
+  drawRoofDetail(ctx, cx, cy, wp, hp, b);
+}
+
+function drawRoofDetail(ctx: CanvasRenderingContext2D, cx: number, cy: number, wp: number, hp: number, b: Building) {
   ctx.save();
-  ctx.translate(sx - wp / 2, sy - hp / 2);
-  // shadow
-  ctx.fillStyle = 'rgba(30,40,30,0.18)';
-  roundRect(ctx, 4, 6, wp, hp, 3); ctx.fill();
-  // body
-  ctx.fillStyle = color;
-  roundRect(ctx, 0, 0, wp, hp, 3); ctx.fill();
-  ctx.strokeStyle = C.stroke; ctx.lineWidth = 1.5; ctx.stroke();
-  // roof strip
-  ctx.fillStyle = shade(color, -0.22);
-  roundRect(ctx, 0, 0, wp, Math.max(4, hp * 0.16), 3); ctx.fill();
-  // windows
-  ctx.fillStyle = 'rgba(255,247,214,0.92)';
-  const m = Math.max(3, wp * 0.12);
-  const cols = Math.max(2, Math.floor((wp - m) / (m * 1.6)));
-  const rows = Math.max(2, Math.floor((hp - hp * 0.2 - m) / (m * 1.6)));
-  const gx = (wp - m) / cols;
-  const gy = (hp - hp * 0.2 - m) / rows;
-  for (let r = 0; r < rows; r++)
-    for (let cc = 0; cc < cols; cc++)
-      roundRect(ctx, m / 2 + cc * gx + gx * 0.18, hp * 0.2 + m / 2 + r * gy + gy * 0.18, gx * 0.5, gy * 0.5, 1), ctx.fill();
+  ctx.translate(cx, cy);
+  const dk = shade(b.color, -0.3), lt = shade(b.color, 0.24);
+  if (b.roof === 0) {
+    ctx.fillStyle = dk;
+    roundRect(ctx, -wp * 0.24, -hp * 0.2, wp * 0.22, hp * 0.2, 1.5); ctx.fill();
+    roundRect(ctx, wp * 0.04, hp * 0.02, wp * 0.2, hp * 0.18, 1.5); ctx.fill();
+  } else if (b.roof === 1) {
+    ctx.fillStyle = dk;
+    ctx.beginPath(); ctx.arc(-wp * 0.1, -hp * 0.05, Math.min(wp, hp) * 0.16, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = lt;
+    roundRect(ctx, wp * 0.1, hp * 0.08, wp * 0.18, hp * 0.16, 1.5); ctx.fill();
+  } else {
+    ctx.fillStyle = 'rgba(196,224,242,0.55)';
+    roundRect(ctx, -wp * 0.26, -hp * 0.26, wp * 0.52, hp * 0.52, 2); ctx.fill();
+    ctx.strokeStyle = dk; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, -hp * 0.26); ctx.lineTo(0, hp * 0.26);
+    ctx.moveTo(-wp * 0.26, 0); ctx.lineTo(wp * 0.26, 0); ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -260,15 +338,6 @@ function drawTree(ctx: CanvasRenderingContext2D, view: View, x: number, y: numbe
   ctx.fillStyle = '#62c46c';
   ctx.beginPath(); ctx.arc(sx + r * 0.25, sy - r * 0.4, r * 0.85, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = 'rgba(28,60,30,0.35)'; ctx.lineWidth = 1; ctx.stroke();
-}
-
-function drawPond(ctx: CanvasRenderingContext2D, view: View, x: number, y: number, w: number, h: number) {
-  const [sx, sy] = worldToScreen(x, y, view);
-  ctx.fillStyle = '#5aa9e6';
-  ctx.beginPath(); ctx.ellipse(sx, sy, w * view.scale / 2, h * view.scale / 2, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#3d8fce'; ctx.lineWidth = 2; ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.beginPath(); ctx.ellipse(sx - w * view.scale * 0.18, sy - h * view.scale * 0.18, w * view.scale * 0.18, h * view.scale * 0.1, 0, 0, Math.PI * 2); ctx.fill();
 }
 
 // ----------------------------------------------------------------- roads
