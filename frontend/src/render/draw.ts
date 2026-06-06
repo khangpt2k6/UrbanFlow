@@ -307,8 +307,8 @@ const PED_KERB = ROAD_EDGE + BIKE_W + 0.4;
 const PED_COLORS = ['#e7563f', '#f0a431', '#3f7fd0', '#7d52c9', '#2f9e6b', '#d94f8e', '#3a414e', '#16a3a3'];
 
 const FAR_WALK = 78;            // strip exits just past the visible window
-const TARGET_POP = 22;
-const SPAWN_EVERY_MS = 900;
+const TARGET_POP = 12;          // kept modest so the crossings read clearly instead of a busy crowd
+const SPAWN_EVERY_MS = 1300;    // trickle newcomers in so they never pop in as a clump
 const MAX_AGE_MS = 90_000;      // hard anti-stuck cap
 const GIVE_UP_MS = 22_000;      // give up waiting at a kerb -> walk to an edge instead
 const PZ_ALONG = 4.0;           // crosswalk danger-band half-depth (stripes + a little overhang)
