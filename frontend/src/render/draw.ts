@@ -299,6 +299,10 @@ function drawGreenery(ctx: CanvasRenderingContext2D, view: View) {
 // frozen CITY, and the only PRNG (makeRng(9001)) advances solely at spawn time, never per frame.
 const PED_LAT = (ROAD_EDGE + SIDEWALK_OUT) / 2;            // footpath midline
 const CROSS_LAT = LAYOUT.half + CROSSWALK_DEPTH / 2;       // centre of a crosswalk band
+// Where a pedestrian waiting to cross holds: the road-side edge of the concrete footpath, just past
+// the protected cycle track. Gating here (instead of at the carriageway edge RH) keeps the whole
+// drawn body off the road - a waiting walker stands ON the kerb, not straddling the asphalt.
+const PED_KERB = ROAD_EDGE + BIKE_W + 0.4;
 const PED_COLORS = ['#e7563f', '#f0a431', '#3f7fd0', '#7d52c9', '#2f9e6b', '#d94f8e', '#3a414e', '#16a3a3'];
 
 const FAR_WALK = 78;            // strip exits just past the visible window
@@ -471,9 +475,9 @@ function updateWalker(w: Walker, dt: number, dtMs: number, signals: SignalState 
       const al = cross.kind === 'NS' ? v.x : v.y;
       if (Math.abs(al - t) < PIMM) { imm = al; break; }
     }
-    if (Math.abs(t) >= RH) {
-      // on the kerb portion of the crossing leg; gate BEFORE the next step puts a foot on the road
-      if (Math.abs(t + dirT * w.speed * dt) < RH) {
+    if (Math.abs(t) >= PED_KERB) {
+      // still behind the kerb; gate BEFORE the next step would carry the body off the footpath
+      if (Math.abs(t + dirT * w.speed * dt) < PED_KERB) {
         if (red && !blocked) { w.u += step; w.state = 'CROSS'; w.waitMs = 0; }
         else { w.state = 'WAIT'; w.waitMs += dtMs; if (w.waitMs > GIVE_UP_MS) { rerouteToEdge(w); return; } }
       } else { w.state = 'WALK'; w.u += step; }
@@ -676,7 +680,7 @@ function drawSignals(ctx: CanvasRenderingContext2D, view: View, signals: SignalS
     { ax: 'EAST', x: front, y: edge, horizontal: false, ox: 0, oy: 1 },
     { ax: 'WEST', x: -front, y: -edge, horizontal: false, ox: 0, oy: -1 },
   ];
-  const R = Math.max(2.6, 0.5 * view.scale);
+  const R = Math.max(3.8, 0.72 * view.scale);
   const gap = R * 0.55;
   const pad = R * 0.7;
   const longSide = R * 8 + gap * 3 + pad * 2; // 3 circles + arrow
