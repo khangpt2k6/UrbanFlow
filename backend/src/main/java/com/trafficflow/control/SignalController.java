@@ -80,6 +80,11 @@ public class SignalController {
                 mv(a, Movement.LEFT), mv(a, Movement.THROUGH), mv(a, Movement.RIGHT));
     }
 
+    /** True when {@code g} is the preemption group currently serving approach {@code a}. */
+    private boolean servesApproach(GreenGroup g, Approach a) {
+        return a != null && g.preempt() && g.name().equals("PREEMPT_" + a);
+    }
+
     /** Request/clear emergency preemption for an approach (null clears it). Thread-safe. */
     public void requestPreempt(Approach approach) {
         preemptRequest.set(approach);
@@ -152,10 +157,18 @@ public class SignalController {
     private void step(double dtMs) {
         subElapsedMs += dtMs;
 
-        // Responsiveness: if an emergency is waiting and we are in a normal green, end the
-        // green now. The transition still passes through yellow + all-red for safety.
-        boolean emergencyWaiting = preemptRequest.get() != null && !current.preempt();
-        if (sub == Sub.GREEN && emergencyWaiting) {
+        // Responsiveness: end the current green early whenever the preemption target no longer
+        // matches what is being served. The transition still passes through yellow + all-red for
+        // safety, so two conflicting movements are never non-red together.
+        //   - In a normal green: any waiting emergency cuts the green short to serve it.
+        //   - In a preemption green: a CHANGED target (the served emergency cleared and another
+        //     approach now needs priority, or preemption was cleared entirely) must also cut it
+        //     short. Without this the infinite preempt-hold strands the new emergency at red while
+        //     an approach with no emergency keeps the green - the classic "the ambulance is stuck
+        //     at the light" bug.
+        Approach req = preemptRequest.get();
+        boolean mustEndGreen = current.preempt() ? !servesApproach(current, req) : req != null;
+        if (sub == Sub.GREEN && mustEndGreen) {
             sub = Sub.YELLOW;
             subElapsedMs = 0;
             return;

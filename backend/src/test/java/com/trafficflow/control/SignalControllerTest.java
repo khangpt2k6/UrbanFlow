@@ -125,6 +125,38 @@ class SignalControllerTest {
     }
 
     @Test
+    void preemptionRetargetsWhenADifferentApproachBecomesThePriority() {
+        // Settle into the infinite-hold NORTH preemption green.
+        signals.requestPreempt(Approach.NORTH);
+        long t = 0;
+        boolean northServed = false;
+        for (; t <= 30_000; t += 50) {
+            signals.stepTo(t);
+            if (signals.currentState().colorFor(Approach.NORTH, Movement.THROUGH) == SignalColor.GREEN
+                    && signals.currentState().phase().startsWith("PREEMPT_NORTH")) {
+                northServed = true;
+            }
+        }
+        assertTrue(northServed, "should be holding the NORTH preemption green");
+
+        // A nearer emergency now appears on EAST: the dispatcher re-points the request mid-hold.
+        signals.requestPreempt(Approach.EAST);
+        boolean eastServed = false;
+        for (; t <= 120_000 && !eastServed; t += 50) {
+            signals.stepTo(t);
+            SignalState s = signals.currentState();
+            assertConflictFree(s); // the re-target must still pass through yellow + all-red
+            if (s.colorFor(Approach.EAST, Movement.THROUGH) == SignalColor.GREEN
+                    && s.colorFor(Approach.NORTH, Movement.THROUGH) == SignalColor.RED) {
+                eastServed = true;
+            }
+        }
+        // Before the fix the machine held PREEMPT_NORTH forever (infinite green, re-target ignored),
+        // stranding the EAST emergency at a red light. It must now switch to serve EAST.
+        assertTrue(eastServed, "preemption must re-target to EAST when it becomes the priority approach");
+    }
+
+    @Test
     void clearingPreemptionResumesNormalCycle() {
         signals.requestPreempt(Approach.NORTH);
         long t = 0;
