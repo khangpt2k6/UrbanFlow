@@ -80,8 +80,8 @@ export default function ControlPanel({ send, connected }: Props) {
   const [speed, setSpeed] = useState(1);
   const [density, setDensity] = useState(26);
   const [mode, setMode] = useState('avg');
-  const [nsGreen, setNsGreen] = useState(15);
-  const [ewGreen, setEwGreen] = useState(15);
+  const [nsGreen, setNsGreen] = useState(20);
+  const [ewGreen, setEwGreen] = useState(20);
   const [leftGreen, setLeftGreen] = useState(5);
   const [yellow, setYellow] = useState(3);
   const [allRed, setAllRed] = useState(2);
@@ -113,8 +113,8 @@ export default function ControlPanel({ send, connected }: Props) {
     setSpeed(1);
     setDensity(26);
     setMode('avg');
-    setNsGreen(15);
-    setEwGreen(15);
+    setNsGreen(20);
+    setEwGreen(20);
     setLeftGreen(5);
     setYellow(3);
     setAllRed(2);

@@ -23,9 +23,10 @@ simulation:
   intersection-half-m: 14.0
   # Deterministic RNG seed for spawning/routing (keeps runs reproducible).
   random-seed: 20260604
-  # Default signal phase durations (seconds).
-  ns-green-seconds: 15.0
-  ew-green-seconds: 15.0
+  # Default signal phase durations (seconds). The through greens are a touch long so a pedestrian
+  # who steps off on the walk phase comfortably clears the carriageway before the light flips back.
+  ns-green-seconds: 20.0
+  ew-green-seconds: 20.0
   yellow-seconds: 3.0
   all-red-seconds: 2.0
   # Distance (m) before the stop line at which an emergency vehicle triggers preemption.

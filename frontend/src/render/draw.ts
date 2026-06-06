@@ -54,6 +54,7 @@ export function drawScene(
   vehicles: VehicleView[],
   signals: SignalState | null,
   nowMs: number,
+  simTimeMs: number | null,
 ) {
   const g = ctx.createLinearGradient(0, 0, 0, canvasH);
   g.addColorStop(0, C.bg);
@@ -69,7 +70,7 @@ export function drawScene(
   drawLaneMarkings(ctx, view);
   drawStopLines(ctx, view);
   for (const v of vehicles) drawVehicle(ctx, view, v, nowMs);
-  drawPedestrians(ctx, view, signals, vehicles, nowMs);
+  drawPedestrians(ctx, view, signals, vehicles, nowMs, simTimeMs);
   if (signals) drawSignals(ctx, view, signals);
   drawCompass(ctx, canvasW, canvasH);
 }
@@ -313,6 +314,9 @@ const GIVE_UP_MS = 22_000;      // give up waiting at a kerb -> walk to an edge 
 const PZ_ALONG = 4.0;           // crosswalk danger-band half-depth (stripes + a little overhang)
 const PZ_LAT = RH + 1.5;        // crosswalk danger-band half-width
 const PIMM = 3.2;               // "a car is right on top of me" distance
+// Pedestrians stroll the footpaths but HURRY across the carriageway, so a crossing started on the
+// walk phase clears the road well before the light turns green again. Applied only to crossing legs.
+const CROSS_SPEEDUP = 1.7;
 
 type CrossMeta = { kind: 'NS' | 'EW'; sign: number };
 interface Loc { x: number; y: number; corner: number }
@@ -399,6 +403,7 @@ let spawnAccMs = 0;
 let lastVehHash = -1;
 let lastVehChangeMs = 0;
 let lastPedMs = 0;
+let lastSnapMs = -1;            // last world sim clock seen; a drop means the world was reset
 const pedRng = makeRng(9001);
 
 function pickLoc(doorBias: number): Loc {
@@ -454,7 +459,7 @@ function updateWalker(w: Walker, dt: number, dtMs: number, signals: SignalState 
   const A = w.pts[w.i], B = w.pts[w.i + 1];
   const cross = A.cross;
   const legLen = Math.max(0.001, Math.hypot(B.x - A.x, B.y - A.y));
-  const step = (w.speed * dt) / legLen;
+  const step = (w.speed * (cross ? CROSS_SPEEDUP : 1) * dt) / legLen;
   if (!cross) {
     w.state = 'WALK'; w.u += step; w.waitMs = 0;                  // footpath leg: always safe
   } else {
@@ -493,7 +498,17 @@ function updateWalker(w: Walker, dt: number, dtMs: number, signals: SignalState 
   finalizePos(w);
 }
 
-function drawPedestrians(ctx: CanvasRenderingContext2D, view: View, signals: SignalState | null, vehicles: VehicleView[], nowMs: number) {
+function drawPedestrians(ctx: CanvasRenderingContext2D, view: View, signals: SignalState | null, vehicles: VehicleView[], nowMs: number, simTimeMs: number | null) {
+  // World reset: the engine zeroes its sim clock, so a backward jump means Reset was pressed.
+  // Clear the walkers and respawn a fresh population so the pedestrians reset along with the cars.
+  if (simTimeMs != null) {
+    if (simTimeMs + 250 < lastSnapMs) {
+      walkers = [];
+      spawnAccMs = 0;
+      for (let k = 0; k < TARGET_POP; k++) walkers.push(spawnWalker(true));
+    }
+    lastSnapMs = simTimeMs;
+  }
   let dt = 0;
   if (lastPedMs) dt = Math.min(0.08, Math.max(0, (nowMs - lastPedMs) / 1000));
   lastPedMs = nowMs;

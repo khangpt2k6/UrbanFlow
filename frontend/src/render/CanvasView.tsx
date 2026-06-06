@@ -54,7 +54,7 @@ export default function CanvasView({ latestRef, prevRef, lastArrivalRef, interva
       const vehicles = latest
         ? interpolateVehicles(prev?.vehicles ?? null, latest.vehicles, alpha)
         : [];
-      drawScene(ctx, view, w, h, vehicles, latest?.signals ?? null, now);
+      drawScene(ctx, view, w, h, vehicles, latest?.signals ?? null, now, latest?.simTimeMs ?? null);
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
