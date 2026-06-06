@@ -72,6 +72,7 @@ export function drawScene(
   for (const v of vehicles) drawVehicle(ctx, view, v, nowMs);
   drawPedestrians(ctx, view, signals, vehicles, nowMs, simTimeMs);
   if (signals) drawSignals(ctx, view, signals);
+  if (signals) drawPedSignals(ctx, view, signals);
   drawCompass(ctx, canvasW, canvasH);
 }
 
@@ -307,10 +308,10 @@ const PED_KERB = ROAD_EDGE + BIKE_W + 0.4;
 const PED_COLORS = ['#e7563f', '#f0a431', '#3f7fd0', '#7d52c9', '#2f9e6b', '#d94f8e', '#3a414e', '#16a3a3'];
 
 const FAR_WALK = 78;            // strip exits just past the visible window
-const TARGET_POP = 12;          // kept modest so the crossings read clearly instead of a busy crowd
+const TARGET_POP = 8;           // few enough that each crossing reads clearly, never a crowd
 const SPAWN_EVERY_MS = 1300;    // trickle newcomers in so they never pop in as a clump
-const MAX_AGE_MS = 90_000;      // hard anti-stuck cap
-const GIVE_UP_MS = 22_000;      // give up waiting at a kerb -> walk to an edge instead
+const MAX_AGE_MS = 120_000;     // hard anti-stuck cap
+const GIVE_UP_MS = 35_000;      // wait this long for the WALK phase before giving up and rerouting
 const PZ_ALONG = 4.0;           // crosswalk danger-band half-depth (stripes + a little overhang)
 const PZ_LAT = RH + 1.5;        // crosswalk danger-band half-width
 const PIMM = 3.2;               // "a car is right on top of me" distance
@@ -445,6 +446,16 @@ function finalizePos(w: Walker) {
   w.fx = dx; w.fy = dy;
 }
 
+// A pedestrian may step onto a crosswalk only on its concurrent WALK phase: the through movement
+// PARALLEL to the walk is solid green, which is exactly when the street being crossed - and its
+// turns - is fully stopped. Crossing the N/S street (kind 'NS', walking E-W) needs E/W through
+// green; crossing the E/W street (kind 'EW', walking N-S) needs N/S through green. This is the
+// signal the little pedestrian heads display, so the walkers and their signals always agree.
+function pedWalkOn(signals: SignalState | null, kind: 'NS' | 'EW'): boolean {
+  if (!signals) return false;
+  return kind === 'NS' ? signals.through.EAST === 'GREEN' : signals.through.NORTH === 'GREEN';
+}
+
 function nearestCorner(x: number, y: number) { return quadCorner(x >= 0 ? 1 : -1, y >= 0 ? 1 : -1); }
 function rerouteToEdge(w: Walker) {
   const c = nearestCorner(w.wx, w.wy);
@@ -468,8 +479,12 @@ function updateWalker(w: Walker, dt: number, dtMs: number, signals: SignalState 
     const tB = cross.kind === 'NS' ? B.x : B.y;
     const crossLat = cross.sign * CROSS_LAT;
     const dirT = Math.sign(tB - t) || 1;
-    const ap = cross.kind === 'NS' ? (cross.sign > 0 ? 'NORTH' : 'SOUTH') : (cross.sign > 0 ? 'EAST' : 'WEST');
-    const red = signals ? signals.through[ap] === 'RED' : false;
+    // Cross only on the concurrent WALK phase: to cross the N/S street the walker needs the PARALLEL
+    // (E/W) through movement green - which is exactly when ALL N/S-street traffic, including its left
+    // turns and the cross-street exits, is stopped. It is NOT enough that this approach's own through
+    // is red: during its protected left, left-turners still sweep across this crosswalk. (Any car that
+    // is on the crosswalk is still yielded to via the blocked/imm checks, so the walker is never hit.)
+    const walk = pedWalkOn(signals, cross.kind);
     let blocked = false, imm = NaN;
     for (const v of vehicles) {
       const inB = cross.kind === 'NS'
@@ -483,7 +498,7 @@ function updateWalker(w: Walker, dt: number, dtMs: number, signals: SignalState 
     if (Math.abs(t) >= PED_KERB) {
       // still behind the kerb; gate BEFORE the next step would carry the body off the footpath
       if (Math.abs(t + dirT * w.speed * dt) < PED_KERB) {
-        if (red && !blocked) { w.u += step; w.state = 'CROSS'; w.waitMs = 0; }
+        if (walk && !blocked) { w.u += step; w.state = 'CROSS'; w.waitMs = 0; }
         else { w.state = 'WAIT'; w.waitMs += dtMs; if (w.waitMs > GIVE_UP_MS) { rerouteToEdge(w); return; } }
       } else { w.state = 'WALK'; w.u += step; }
     } else if (!Number.isNaN(imm)) {
@@ -549,6 +564,53 @@ function drawPed(ctx: CanvasRenderingContext2D, view: View, x: number, y: number
   // head, nudged toward the front
   ctx.fillStyle = '#eab38a';
   ctx.beginPath(); ctx.arc(r * 0.28, 0, r * 0.55, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// ----------------------------------------------------------------- pedestrian signals
+// A little WALK / DON'T-WALK head at each crosswalk so it is obvious when a walker may cross.
+// Green walking figure = WALK, red standing figure = DON'T WALK. Driven by exactly the same rule
+// the walkers obey (pedWalkOn), so the heads and the pedestrians can never disagree.
+function drawPedSignals(ctx: CanvasRenderingContext2D, view: View, signals: SignalState) {
+  const nsWalk = pedWalkOn(signals, 'NS'); // N and S crosswalks (crossing the N/S street)
+  const ewWalk = pedWalkOn(signals, 'EW'); // E and W crosswalks (crossing the E/W street)
+  const o = PED_LAT + 0.9;                  // just outside a crosswalk foot, on the sidewalk corner
+  drawPedSignal(ctx, view, o, CROSS_LAT, nsWalk);    // north crosswalk  (NE corner)
+  drawPedSignal(ctx, view, -o, -CROSS_LAT, nsWalk);  // south crosswalk  (SW corner)
+  drawPedSignal(ctx, view, CROSS_LAT, -o, ewWalk);   // east crosswalk   (SE corner)
+  drawPedSignal(ctx, view, -CROSS_LAT, o, ewWalk);   // west crosswalk   (NW corner)
+}
+
+function drawPedSignal(ctx: CanvasRenderingContext2D, view: View, x: number, y: number, walk: boolean) {
+  const [sx, sy] = worldToScreen(x, y, view);
+  const s = view.scale;
+  const w = 1.5 * s, h = 2.1 * s, rad = 0.34 * s;
+  // shadow + dark housing
+  ctx.fillStyle = 'rgba(20,28,28,0.28)';
+  ctx.beginPath(); ctx.roundRect(sx - w / 2 + 1, sy - h / 2 + 2, w, h, rad); ctx.fill();
+  ctx.fillStyle = '#23262e';
+  ctx.beginPath(); ctx.roundRect(sx - w / 2, sy - h / 2, w, h, rad); ctx.fill();
+  ctx.lineWidth = Math.max(0.5, 0.06 * s); ctx.strokeStyle = '#0d0f14'; ctx.stroke();
+  // lit figure: green walking person, or red standing person
+  const col = walk ? '#34e08a' : '#ff5a52';
+  const u = h * 0.5;
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.fillStyle = col; ctx.strokeStyle = col;
+  ctx.lineWidth = Math.max(0.8, u * 0.14); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.arc(0, -u * 0.55, u * 0.17, 0, Math.PI * 2); ctx.fill(); // head
+  if (walk) {
+    ctx.beginPath(); ctx.moveTo(0, -u * 0.36); ctx.lineTo(u * 0.05, u * 0.02); ctx.stroke();   // torso
+    ctx.beginPath(); ctx.moveTo(u * 0.05, u * 0.02); ctx.lineTo(-u * 0.20, u * 0.36); ctx.stroke(); // rear leg
+    ctx.beginPath(); ctx.moveTo(u * 0.05, u * 0.02); ctx.lineTo(u * 0.27, u * 0.30); ctx.stroke();  // front leg
+    ctx.beginPath(); ctx.moveTo(0, -u * 0.22); ctx.lineTo(u * 0.24, -u * 0.04); ctx.stroke();       // swinging arm
+  } else {
+    ctx.beginPath(); ctx.moveTo(0, -u * 0.36); ctx.lineTo(0, u * 0.04); ctx.stroke();              // torso
+    ctx.beginPath(); ctx.moveTo(0, u * 0.04); ctx.lineTo(-u * 0.13, u * 0.36); ctx.stroke();        // left leg
+    ctx.beginPath(); ctx.moveTo(0, u * 0.04); ctx.lineTo(u * 0.13, u * 0.36); ctx.stroke();         // right leg
+    ctx.beginPath(); ctx.moveTo(0, -u * 0.20); ctx.lineTo(-u * 0.17, -u * 0.02); ctx.stroke();      // arms at sides
+    ctx.beginPath(); ctx.moveTo(0, -u * 0.20); ctx.lineTo(u * 0.17, -u * 0.02); ctx.stroke();
+  }
   ctx.restore();
 }
 
