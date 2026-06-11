@@ -78,7 +78,7 @@ function Slider({ label, min, max, step, value, unit, onChange }: SliderProps) {
 
 export default function ControlPanel({ send, connected }: Props) {
   const [speed, setSpeed] = useState(1);
-  const [density, setDensity] = useState(26);
+  const [density, setDensity] = useState(50);
   const [mode, setMode] = useState('avg');
   const [nsGreen, setNsGreen] = useState(20);
   const [ewGreen, setEwGreen] = useState(20);
@@ -90,9 +90,9 @@ export default function ControlPanel({ send, connected }: Props) {
   const [showSignals, setShowSignals] = useState(false);
 
   const MODES = [
-    { key: 'off', label: 'Sparse', icon: '🌙', density: 14 },
-    { key: 'avg', label: 'Normal', icon: '🏙️', density: 26 },
-    { key: 'rush', label: 'Rush Hour', icon: '🚦', density: 48 },
+    { key: 'off', label: 'Sparse', icon: '🌙', density: 25 },
+    { key: 'avg', label: 'Normal', icon: '🏙️', density: 50 },
+    { key: 'rush', label: 'Rush Hour', icon: '🚦', density: 100 },
   ];
   const applyMode = (m: { key: string; density: number }) => {
     setMode(m.key);
@@ -111,7 +111,7 @@ export default function ControlPanel({ send, connected }: Props) {
   // panel never drifts out of sync with the freshly reset engine (e.g. a stuck "Start" label).
   const resetAll = () => {
     setSpeed(1);
-    setDensity(26);
+    setDensity(50);
     setMode('avg');
     setNsGreen(20);
     setEwGreen(20);
@@ -131,7 +131,7 @@ export default function ControlPanel({ send, connected }: Props) {
 
       <Slider label="Speed" min={0.25} max={4} step={0.25} value={speed} unit="x"
         onChange={(v) => { setSpeed(v); send({ type: 'setSpeed', value: v }); }} />
-      <Slider label="Density" min={0} max={120} step={1} value={density}
+      <Slider label="Density" min={0} max={200} step={1} value={density}
         onChange={(v) => { setDensity(v); setMode(''); send({ type: 'setDensity', count: v }); }} />
 
       <div className="modes">

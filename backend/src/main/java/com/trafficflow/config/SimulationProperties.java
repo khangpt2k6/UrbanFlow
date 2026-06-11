@@ -15,8 +15,8 @@ public class SimulationProperties {
     private int workerThreads = 24;
     /** Simulation ticks per second. */
     private int tickHz = 30;
-    /** Default target number of concurrent vehicles (Average mode; off-peak/rush adjust it live). */
-    private int targetVehicles = 45;
+    /** Default target number of concurrent vehicles (Normal mode; sparse/rush adjust it live). */
+    private int targetVehicles = 50;
     /** Approach length in meters (approach edge to stop line). */
     private double approachLengthM = 120.0;
     /** Lane width in meters. */
