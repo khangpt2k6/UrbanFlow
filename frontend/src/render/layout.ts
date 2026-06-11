@@ -18,11 +18,12 @@ export const STOP_SETBACK = 6.5;
 export const WORLD_SPAN = 2 * (LAYOUT.approachLength + LAYOUT.half);
 
 /**
- * Focused viewport span in meters. We zoom in on the action around the intersection rather
- * than fitting the whole 268 m world, so vehicles are large and legible. Vehicles outside this
- * window are simply clipped.
+ * Focused viewport span in meters. We zoom in tight on the intersection rather than fitting the
+ * whole 268 m world: the crossing, its signals, crosswalks and the head of each queue fill the
+ * screen, and the city blocks are just a backdrop around the edges. Vehicles outside this window
+ * are simply clipped and roll into view as they approach.
  */
-export const VIEW_SPAN = 150;
+export const VIEW_SPAN = 110;
 
 export interface View {
   scale: number; // pixels per meter
