@@ -312,9 +312,8 @@ const TARGET_POP = 8;           // few enough that each crossing reads clearly, 
 const SPAWN_EVERY_MS = 1300;    // trickle newcomers in so they never pop in as a clump
 const MAX_AGE_MS = 120_000;     // hard anti-stuck cap
 const GIVE_UP_MS = 35_000;      // wait this long for the WALK phase before giving up and rerouting
-const PZ_ALONG = 4.0;           // crosswalk danger-band half-depth (stripes + a little overhang)
-const PZ_LAT = RH + 1.5;        // crosswalk danger-band half-width
-const PIMM = 3.2;               // "a car is right on top of me" distance
+const CROSS_CLEAR = 30;         // need this much clear road (of MOVING cars) ahead before stepping off
+const PED_CLEAR_MS = 5500;      // only step off with at least this much WALK time left to finish
 // Pedestrians stroll the footpaths but HURRY across the carriageway, so a crossing started on the
 // walk phase clears the road well before the light turns green again. Applied only to crossing legs.
 const CROSS_SPEEDUP = 1.7;
@@ -401,10 +400,14 @@ function buildRoute(o: Loc, d: Loc): RoutePt[] {
 
 let walkers: Walker[] = [];
 let spawnAccMs = 0;
-let lastVehHash = -1;
-let lastVehChangeMs = 0;
-let lastPedMs = 0;
 let lastSnapMs = -1;            // last world sim clock seen; a drop means the world was reset
+let lastPedSimMs = -1;          // last sim clock used to advance walkers; drives fps-independent motion
+// Pedestrian clearance interval: learn each through-green's length (wall-clock, so it tracks the
+// speed multiplier) and how much remains, so a walker only steps off with time to finish crossing.
+let ewGreenStartMs = -1, ewGreenLenMs = 18000, prevEWGreen = false;
+let nsGreenStartMs = -1, nsGreenLenMs = 18000, prevNSGreen = false;
+let walkLeftForNS = 0;         // ms of E/W through-green left -> a N/S-crosswalk walker's time to finish
+let walkLeftForEW = 0;         // ms of N/S through-green left -> an E/W-crosswalk walker's time to finish
 const pedRng = makeRng(9001);
 
 function pickLoc(doorBias: number): Loc {
@@ -480,33 +483,33 @@ function updateWalker(w: Walker, dt: number, dtMs: number, signals: SignalState 
     const crossLat = cross.sign * CROSS_LAT;
     const dirT = Math.sign(tB - t) || 1;
     // Cross only on the concurrent WALK phase: to cross the N/S street the walker needs the PARALLEL
-    // (E/W) through movement green - which is exactly when ALL N/S-street traffic, including its left
-    // turns and the cross-street exits, is stopped. It is NOT enough that this approach's own through
-    // is red: during its protected left, left-turners still sweep across this crosswalk. (Any car that
-    // is on the crosswalk is still yielded to via the blocked/imm checks, so the walker is never hit.)
+    // (E/W) through movement green - which is exactly when this street's own through traffic is stopped.
     const walk = pedWalkOn(signals, cross.kind);
-    let blocked = false, imm = NaN;
+    // Gap acceptance. Only MOVING cars on THIS carriageway count - cars queued at the red sit behind
+    // the stop line, past the crosswalk, and never reach the walker. gapClear = no moving car within
+    // CROSS_CLEAR of the crosswalk, i.e. a window wide enough to walk the whole road before one arrives.
+    let gapClear = true;
     for (const v of vehicles) {
-      const inB = cross.kind === 'NS'
-        ? Math.abs(v.y - crossLat) < PZ_ALONG && Math.abs(v.x) < PZ_LAT
-        : Math.abs(v.x - crossLat) < PZ_ALONG && Math.abs(v.y) < PZ_LAT;
-      if (!inB) continue;
-      blocked = true;
-      const al = cross.kind === 'NS' ? v.x : v.y;
-      if (Math.abs(al - t) < PIMM) { imm = al; break; }
+      if (v.v < 2) continue;                                  // stopped/queued: harmless
+      const along = cross.kind === 'NS' ? Math.abs(v.y - crossLat) : Math.abs(v.x - crossLat);
+      const across = cross.kind === 'NS' ? Math.abs(v.x) : Math.abs(v.y);
+      if (across > RH + 1) continue;                          // not on the carriageway being crossed
+      if (along < CROSS_CLEAR) { gapClear = false; break; }
     }
     if (Math.abs(t) >= PED_KERB) {
-      // still behind the kerb; gate BEFORE the next step would carry the body off the footpath
+      // behind the kerb: step off only on the WALK phase, into a clean gap, AND with enough WALK time
+      // left to finish. The three together mean the whole crossing happens while this street is stopped.
       if (Math.abs(t + dirT * w.speed * dt) < PED_KERB) {
-        if (walk && !blocked) { w.u += step; w.state = 'CROSS'; w.waitMs = 0; }
+        const timeLeft = cross.kind === 'NS' ? walkLeftForNS : walkLeftForEW;
+        if (walk && gapClear && timeLeft >= PED_CLEAR_MS) { w.u += step; w.state = 'CROSS'; w.waitMs = 0; }
         else { w.state = 'WAIT'; w.waitMs += dtMs; if (w.waitMs > GIVE_UP_MS) { rerouteToEdge(w); return; } }
       } else { w.state = 'WALK'; w.u += step; }
-    } else if (!Number.isNaN(imm)) {
-      const carTowardB = Math.sign(imm - t) === dirT;
-      w.u += (carTowardB ? -1 : 1) * step * 1.6; w.state = 'CROSS';   // step away from the car
-    } else if (!blocked) {
-      w.u += step; w.state = 'CROSS';                                 // clear: keep crossing
-    } // else committed but a car is ahead in the crossing: hold this frame
+    } else {
+      // committed: the gap and the clearance time were both checked at the kerb, so walk straight
+      // across at full pace and never stop - this guarantees the walker is always off the carriageway
+      // again before the street it is crossing gets a green.
+      w.u += step; w.state = 'CROSS';
+    }
   }
   if (w.u < 0) w.u = 0;
   if (w.u >= 1) { w.u -= 1; w.i++; if (w.i >= w.pts.length - 1) w.state = 'DONE'; }
@@ -524,15 +527,26 @@ function drawPedestrians(ctx: CanvasRenderingContext2D, view: View, signals: Sig
     }
     lastSnapMs = simTimeMs;
   }
+  // Learn each through-green's length from its rising/falling edges and how much of it is left, so a
+  // walker only steps off when it can finish before the green ends (the pedestrian clearance interval).
+  const ewG = signals?.through.EAST === 'GREEN';
+  const nsG = signals?.through.NORTH === 'GREEN';
+  if (ewG && !prevEWGreen) ewGreenStartMs = nowMs;
+  else if (!ewG && prevEWGreen && ewGreenStartMs >= 0) ewGreenLenMs = Math.max(4000, nowMs - ewGreenStartMs);
+  if (nsG && !prevNSGreen) nsGreenStartMs = nowMs;
+  else if (!nsG && prevNSGreen && nsGreenStartMs >= 0) nsGreenLenMs = Math.max(4000, nowMs - nsGreenStartMs);
+  prevEWGreen = !!ewG; prevNSGreen = !!nsG;
+  walkLeftForNS = ewG ? ewGreenLenMs - (nowMs - ewGreenStartMs) : 0;
+  walkLeftForEW = nsG ? nsGreenLenMs - (nowMs - nsGreenStartMs) : 0;
+
+  // Drive walker motion by the SIM clock, not the render frame rate. A low-fps machine (the kind that
+  // lags) used to clamp the frame delta and put the walkers into slow motion, so they crawled across
+  // and lingered on the road. Using the sim-time delta keeps their speed correct at any frame rate; a
+  // paused/stalled feed gives delta 0 (they hold), and a big hitch is capped so they never teleport.
   let dt = 0;
-  if (lastPedMs) dt = Math.min(0.08, Math.max(0, (nowMs - lastPedMs) / 1000));
-  lastPedMs = nowMs;
-  let dtMs = dt * 1000;
-  // pause detection: if the cars haven't moved for ~250 ms, freeze the walkers too
-  let hash = 0;
-  for (const v of vehicles) hash += v.x * 0.7 + v.y * 1.3;
-  if (vehicles.length === 0 || Math.abs(hash - lastVehHash) > 0.05) { lastVehHash = hash; lastVehChangeMs = nowMs; }
-  if (vehicles.length > 0 && nowMs - lastVehChangeMs > 250) { dt = 0; dtMs = 0; }
+  if (lastPedSimMs >= 0 && simTimeMs != null) dt = Math.min(0.2, Math.max(0, (simTimeMs - lastPedSimMs) / 1000));
+  if (simTimeMs != null) lastPedSimMs = simTimeMs;
+  const dtMs = dt * 1000;
 
   if (dt > 0) {
     spawnAccMs += dtMs;
@@ -584,32 +598,41 @@ function drawPedSignals(ctx: CanvasRenderingContext2D, view: View, signals: Sign
 function drawPedSignal(ctx: CanvasRenderingContext2D, view: View, x: number, y: number, walk: boolean) {
   const [sx, sy] = worldToScreen(x, y, view);
   const s = view.scale;
-  const w = 1.5 * s, h = 2.1 * s, rad = 0.34 * s;
-  // shadow + dark housing
-  ctx.fillStyle = 'rgba(20,28,28,0.28)';
-  ctx.beginPath(); ctx.roundRect(sx - w / 2 + 1, sy - h / 2 + 2, w, h, rad); ctx.fill();
-  ctx.fillStyle = '#23262e';
+  const w = 1.9 * s, h = 2.5 * s, rad = 0.34 * s;
+  // shadow + dark housing (a square box - deliberately unlike the round-lamp vehicle heads)
+  ctx.fillStyle = 'rgba(18,24,26,0.32)';
+  ctx.beginPath(); ctx.roundRect(sx - w / 2 + 1.5, sy - h / 2 + 2, w, h, rad); ctx.fill();
+  ctx.fillStyle = '#15181e';
   ctx.beginPath(); ctx.roundRect(sx - w / 2, sy - h / 2, w, h, rad); ctx.fill();
-  ctx.lineWidth = Math.max(0.5, 0.06 * s); ctx.strokeStyle = '#0d0f14'; ctx.stroke();
-  // lit figure: green walking person, or red standing person
-  const col = walk ? '#34e08a' : '#ff5a52';
-  const u = h * 0.5;
+  ctx.lineWidth = Math.max(0.6, 0.07 * s); ctx.strokeStyle = '#05070a'; ctx.stroke();
+  // the lit lens: its COLOUR carries the state (readable even when only a few pixels tall), with a
+  // soft glow so a green WALK / red DON'T-WALK pops against the dark city
+  const lit = walk ? '#2bd778' : '#ff5b53';
+  const glow = walk ? 'rgba(43,215,120,0.55)' : 'rgba(255,91,83,0.5)';
+  const lw = w - 0.5 * s, lh = h - 0.5 * s;
+  ctx.save();
+  ctx.shadowColor = glow; ctx.shadowBlur = Math.max(2, 0.7 * s);
+  ctx.fillStyle = lit;
+  ctx.beginPath(); ctx.roundRect(sx - lw / 2, sy - lh / 2, lw, lh, rad * 0.7); ctx.fill();
+  ctx.restore();
+  // a dark pedestrian pictogram cut into the lens: a walking figure for WALK, a standing one for STOP
+  const u = h * 0.46;
   ctx.save();
   ctx.translate(sx, sy);
-  ctx.fillStyle = col; ctx.strokeStyle = col;
-  ctx.lineWidth = Math.max(0.8, u * 0.14); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  ctx.beginPath(); ctx.arc(0, -u * 0.55, u * 0.17, 0, Math.PI * 2); ctx.fill(); // head
+  ctx.fillStyle = '#0c1014'; ctx.strokeStyle = '#0c1014';
+  ctx.lineWidth = Math.max(1, u * 0.22); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.arc(0, -u * 0.52, u * 0.2, 0, Math.PI * 2); ctx.fill(); // head
   if (walk) {
-    ctx.beginPath(); ctx.moveTo(0, -u * 0.36); ctx.lineTo(u * 0.05, u * 0.02); ctx.stroke();   // torso
-    ctx.beginPath(); ctx.moveTo(u * 0.05, u * 0.02); ctx.lineTo(-u * 0.20, u * 0.36); ctx.stroke(); // rear leg
-    ctx.beginPath(); ctx.moveTo(u * 0.05, u * 0.02); ctx.lineTo(u * 0.27, u * 0.30); ctx.stroke();  // front leg
-    ctx.beginPath(); ctx.moveTo(0, -u * 0.22); ctx.lineTo(u * 0.24, -u * 0.04); ctx.stroke();       // swinging arm
+    ctx.beginPath(); ctx.moveTo(-0.02 * u, -u * 0.3); ctx.lineTo(0.05 * u, u * 0.05); ctx.stroke();   // torso
+    ctx.beginPath(); ctx.moveTo(0.05 * u, u * 0.05); ctx.lineTo(-u * 0.22, u * 0.36); ctx.stroke();   // rear leg
+    ctx.beginPath(); ctx.moveTo(0.05 * u, u * 0.05); ctx.lineTo(u * 0.28, u * 0.32); ctx.stroke();    // front leg
+    ctx.beginPath(); ctx.moveTo(0, -u * 0.16); ctx.lineTo(u * 0.26, -u * 0.02); ctx.stroke();         // swinging arm
   } else {
-    ctx.beginPath(); ctx.moveTo(0, -u * 0.36); ctx.lineTo(0, u * 0.04); ctx.stroke();              // torso
-    ctx.beginPath(); ctx.moveTo(0, u * 0.04); ctx.lineTo(-u * 0.13, u * 0.36); ctx.stroke();        // left leg
-    ctx.beginPath(); ctx.moveTo(0, u * 0.04); ctx.lineTo(u * 0.13, u * 0.36); ctx.stroke();         // right leg
-    ctx.beginPath(); ctx.moveTo(0, -u * 0.20); ctx.lineTo(-u * 0.17, -u * 0.02); ctx.stroke();      // arms at sides
-    ctx.beginPath(); ctx.moveTo(0, -u * 0.20); ctx.lineTo(u * 0.17, -u * 0.02); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -u * 0.3); ctx.lineTo(0, u * 0.08); ctx.stroke();                 // torso
+    ctx.beginPath(); ctx.moveTo(0, u * 0.08); ctx.lineTo(-u * 0.14, u * 0.36); ctx.stroke();          // left leg
+    ctx.beginPath(); ctx.moveTo(0, u * 0.08); ctx.lineTo(u * 0.14, u * 0.36); ctx.stroke();           // right leg
+    ctx.beginPath(); ctx.moveTo(0, -u * 0.16); ctx.lineTo(-u * 0.16, u * 0.04); ctx.stroke();         // arms at the sides
+    ctx.beginPath(); ctx.moveTo(0, -u * 0.16); ctx.lineTo(u * 0.16, u * 0.04); ctx.stroke();
   }
   ctx.restore();
 }
