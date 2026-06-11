@@ -320,8 +320,8 @@ const CROSS_SPEEDUP = 1.7;
 
 type CrossMeta = { kind: 'NS' | 'EW'; sign: number };
 interface Loc { x: number; y: number; corner: number }
-interface RoutePt { x: number; y: number; cross?: CrossMeta }
-interface Walker {
+export interface RoutePt { x: number; y: number; cross?: CrossMeta }
+export interface Walker {
   pts: RoutePt[]; i: number; u: number;
   speed: number; color: string; laneOff: number; bob: number;
   state: 'WALK' | 'WAIT' | 'CROSS' | 'DONE'; waitMs: number; ageMs: number;
@@ -499,22 +499,51 @@ function updateWalker(w: Walker, dt: number, dtMs: number, signals: SignalState 
     if (Math.abs(t) >= PED_KERB) {
       // behind the kerb: step off only on the WALK phase, into a clean gap, AND with enough WALK time
       // left to finish. The three together mean the whole crossing happens while this street is stopped.
-      if (Math.abs(t + dirT * w.speed * dt) < PED_KERB) {
+      // The lookahead must use the same CROSS_SPEEDUP step the walker actually takes below, or fast
+      // walkers leap past the kerb un-gated and "commit" without the WALK phase ever being checked.
+      if (Math.abs(t + dirT * w.speed * CROSS_SPEEDUP * dt) < PED_KERB) {
         const timeLeft = cross.kind === 'NS' ? walkLeftForNS : walkLeftForEW;
         if (walk && gapClear && timeLeft >= PED_CLEAR_MS) { w.u += step; w.state = 'CROSS'; w.waitMs = 0; }
         else { w.state = 'WAIT'; w.waitMs += dtMs; if (w.waitMs > GIVE_UP_MS) { rerouteToEdge(w); return; } }
       } else { w.state = 'WALK'; w.u += step; }
     } else {
-      // committed: the gap and the clearance time were both checked at the kerb, so walk straight
-      // across at full pace and never stop - this guarantees the walker is always off the carriageway
-      // again before the street it is crossing gets a green.
-      w.u += step; w.state = 'CROSS';
+      // committed: the kerb checks sized the whole crossing to fit inside the stopped phase, so keep
+      // moving and never linger. But cars never brake for walkers, and a turner off the PARALLEL
+      // street can sweep this crosswalk mid-WALK - if one is about to occupy this spot, burst out of
+      // its path (back if it is ahead, ahead if it is behind) instead of walking into it.
+      let imm = NaN;
+      for (const v of vehicles) {
+        if (v.v < 2) continue;
+        const along = cross.kind === 'NS' ? v.y - crossLat : v.x - crossLat;
+        if (Math.abs(along) > 4.0) continue;                  // not on this crosswalk's band
+        const at = cross.kind === 'NS' ? v.x : v.y;
+        if (Math.abs(at - t) < 3.2) { imm = at; break; }
+      }
+      if (Number.isNaN(imm)) w.u += step;
+      else w.u += (Math.sign(imm - t) === dirT ? -1 : 1) * step * 1.6;
+      w.state = 'CROSS';
     }
   }
   if (w.u < 0) w.u = 0;
-  if (w.u >= 1) { w.u -= 1; w.i++; if (w.i >= w.pts.length - 1) w.state = 'DONE'; }
+  if (w.u >= 1) {
+    w.u -= 1; w.i++;
+    if (w.i >= w.pts.length - 1) w.state = 'DONE';
+    // Start every crossing leg exactly AT the kerb foot: u is normalized per leg, so carrying a
+    // short footpath leg's leftover fraction into the much longer crossing leg would teleport the
+    // walker metres onto the carriageway without the kerb gate above ever running.
+    else if (w.pts[w.i].cross) w.u = 0;
+  }
   finalizePos(w);
 }
+
+// Test-only access to the walker crossing rules (pure math, no canvas): lets unit tests prove a
+// walker can never step off the kerb against its WALK phase, whatever the frame timing.
+export const __pedTest = {
+  updateWalker,
+  pedWalkOn,
+  setWalkLeft(ns: number, ew: number) { walkLeftForNS = ns; walkLeftForEW = ew; },
+  PED_KERB, PED_LAT, CROSS_LAT, CROSS_SPEEDUP, PED_CLEAR_MS,
+};
 
 function drawPedestrians(ctx: CanvasRenderingContext2D, view: View, signals: SignalState | null, vehicles: VehicleView[], nowMs: number, simTimeMs: number | null) {
   // World reset: the engine zeroes its sim clock, so a backward jump means Reset was pressed.
