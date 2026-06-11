@@ -18,10 +18,11 @@ import com.trafficflow.model.VehicleType;
  */
 public final class CarFollowingModel {
 
-    /** Minimum standstill bumper-to-bumper gap (meters). */
-    public static final double MIN_GAP = 2.0;
+    /** Minimum standstill bumper-to-bumper gap (meters). Generous so queued cars read clearly
+     *  apart on screen instead of bunching nose-to-tail. */
+    public static final double MIN_GAP = 3.5;
     /** Desired time headway (seconds). */
-    public static final double HEADWAY = 1.5;
+    public static final double HEADWAY = 1.6;
     /** Free-acceleration exponent. */
     public static final double DELTA = 4.0;
     /** Hard floor on acceleration to bound emergency braking (m/s^2). */
