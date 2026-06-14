@@ -41,6 +41,17 @@ public final class CarFollowingModel {
      * @return longitudinal acceleration (m/s^2), clamped to [-MAX_BRAKE, maxAccel]
      */
     public static double accel(double v, double v0, double dv, double gap, VehicleType type) {
+        return accel(v, v0, dv, gap, type, HEADWAY);
+    }
+
+    /**
+     * Same IDM, but with a caller-supplied time headway. A shorter headway lets a vehicle follow
+     * closer (used so an emergency vehicle can tail a clearing queue, and so civilians making way
+     * for one pack forward to open the path). The standstill {@link #MIN_GAP} and the {@code MAX_BRAKE}
+     * floor still apply, so a shorter headway never makes following unsafe - it only reduces the
+     * speed-dependent slack, and the gap term still diverges before contact.
+     */
+    public static double accel(double v, double v0, double dv, double gap, VehicleType type, double headway) {
         double a = type.maxAccel();
         double b = type.comfortDecel();
         double desiredSpeed = Math.max(0.1, v0);
@@ -50,7 +61,7 @@ public final class CarFollowingModel {
         double interaction = 0.0;
         if (Double.isFinite(gap)) {
             double safeGap = Math.max(0.05, gap);
-            double sStar = MIN_GAP + Math.max(0.0, v * HEADWAY + (v * dv) / (2.0 * Math.sqrt(a * b)));
+            double sStar = MIN_GAP + Math.max(0.0, v * headway + (v * dv) / (2.0 * Math.sqrt(a * b)));
             double ratio = sStar / safeGap;
             interaction = ratio * ratio;
         }

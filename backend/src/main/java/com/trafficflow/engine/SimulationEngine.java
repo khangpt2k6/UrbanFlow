@@ -36,6 +36,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -96,6 +97,13 @@ public class SimulationEngine {
     private static final long AUTO_EMERGENCY_MAX_MS = 34_000;
     /** Sim time of the first self-dispatched emergency after a (re)start, so one appears promptly. */
     private static final long AUTO_EMERGENCY_FIRST_MS = 9_000;
+    /** A civilian with an emergency vehicle this close behind in the same lane makes way (m). */
+    private static final double MAKE_WAY_DIST = 45.0;
+    /** Desired-speed multiplier a make-way civilian gets to clear the path forward. */
+    private static final double MAKE_WAY_SPEEDUP = 1.3;
+    /** Tighter time headway (s) for a make-way civilian, and for an emergency tailing the queue. */
+    private static final double MAKE_WAY_HEADWAY = 1.1;
+    private static final double EMERGENCY_HEADWAY = 1.0;
 
     private final SimulationProperties props;
     private final IntersectionLayout layout;
@@ -317,10 +325,43 @@ public class SimulationEngine {
             return;
         }
         VehicleType type = autoEmergencyRng.nextBoolean() ? VehicleType.AMBULANCE : VehicleType.FIRETRUCK;
-        Approach approach = Approach.values()[autoEmergencyRng.nextInt(Approach.values().length)];
+        Approach approach = leastCongestedApproach();
         enqueue(new ControlCommand.SpawnEmergency(type, approach));
         long span = AUTO_EMERGENCY_MAX_MS - AUTO_EMERGENCY_MIN_MS;
         nextAutoEmergencyMs = nowSim + AUTO_EMERGENCY_MIN_MS + (long) (autoEmergencyRng.nextDouble() * span);
+    }
+
+    /**
+     * Pick the approach an auto-dispatched emergency should enter from: the one with the fewest
+     * vehicles still queued ahead of the stop line, so it starts on the clearest run instead of
+     * behind the longest jam. Reads the published (immutable) states, so it is safe on the spawner
+     * thread; a randomized scan order breaks ties so the choice still varies between dispatches.
+     */
+    private Approach leastCongestedApproach() {
+        List<VehicleState> states = publishedStates.get();
+        double stopLineS = layout.stopLineS();
+        EnumMap<Approach, Integer> queued = new EnumMap<>(Approach.class);
+        for (Approach a : Approach.values()) {
+            queued.put(a, 0);
+        }
+        for (VehicleState st : states) {
+            if (st.s() < stopLineS) {
+                queued.merge(st.laneId().approach(), 1, Integer::sum);
+            }
+        }
+        Approach[] order = Approach.values();
+        int offset = autoEmergencyRng.nextInt(order.length);
+        Approach best = order[offset];
+        int bestCount = Integer.MAX_VALUE;
+        for (int k = 0; k < order.length; k++) {
+            Approach a = order[(offset + k) % order.length];
+            int c = queued.get(a);
+            if (c < bestCount) {
+                bestCount = c;
+                best = a;
+            }
+        }
+        return best;
     }
 
     private void statsTick() {
@@ -538,6 +579,32 @@ public class SimulationEngine {
             VehicleType type = slice.types[i];
             double v0 = type.maxSpeedMps();
 
+            // Make way for an emergency (within the single-lane model: no pulling aside, so the
+            // path is cleared longitudinally instead). An emergency tails the queue a little closer;
+            // a civilian with an emergency close behind in this lane speeds up and packs forward to
+            // drain the path ahead. This only takes effect where the vehicle may actually move - its
+            // own movement's green, which during preemption is exactly the emergency's approach - so
+            // make-way never runs a red. The hard caps below still prevent any collision.
+            double headway = CarFollowingModel.HEADWAY;
+            if (type.emergency()) {
+                headway = EMERGENCY_HEADWAY;
+            } else {
+                boolean emergencyBehind = false;
+                for (int j = i - 1; j >= 0; j--) {
+                    if (s - slice.s[j] > MAKE_WAY_DIST) {
+                        break; // slice is sorted ascending by s, so nothing closer remains
+                    }
+                    if (slice.types[j].emergency()) {
+                        emergencyBehind = true;
+                        break;
+                    }
+                }
+                if (emergencyBehind) {
+                    v0 *= MAKE_WAY_SPEEDUP;
+                    headway = MAKE_WAY_HEADWAY;
+                }
+            }
+
             // Real leader (next vehicle ahead in this lane).
             boolean hasLeader = i + 1 < slice.size();
             double leaderRearNow = Double.POSITIVE_INFINITY;
@@ -580,7 +647,7 @@ public class SimulationEngine {
                 obstacleV = 0;
             }
             double dv = v - obstacleV;
-            double accel = CarFollowingModel.accel(v, v0, dv, obstacleGap, type);
+            double accel = CarFollowingModel.accel(v, v0, dv, obstacleGap, type, headway);
             Kinematics.Step step = Kinematics.advance(v, accel, dt, v0);
 
             // Hard safety caps: never enter the box on a stop, never pass the leader's rear.

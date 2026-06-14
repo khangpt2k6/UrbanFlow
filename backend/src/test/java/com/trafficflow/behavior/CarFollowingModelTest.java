@@ -47,4 +47,21 @@ class CarFollowingModelTest {
         double a = CarFollowingModel.accel(20.0, V0, 20.0, 0.1, VehicleType.TRUCK);
         assertTrue(a >= -CarFollowingModel.MAX_BRAKE - 1e-9, "braking is bounded by MAX_BRAKE");
     }
+
+    @Test
+    void shorterHeadwayAllowsCloserFollowing() {
+        // A make-way / emergency vehicle uses a shorter time headway, so at the same gap and speed
+        // it accelerates at least as much as the default (it tolerates following closer).
+        double dflt = CarFollowingModel.accel(10.0, V0, 0.0, 12.0, VehicleType.CAR, CarFollowingModel.HEADWAY);
+        double tight = CarFollowingModel.accel(10.0, V0, 0.0, 12.0, VehicleType.CAR, 1.0);
+        assertTrue(tight >= dflt, "a shorter headway should not brake more than the default at the same gap");
+    }
+
+    @Test
+    void shorterHeadwayStillBrakesInsideTheStandstillGap() {
+        // Safety floor: even with a tiny headway, closing onto a 1 m gap still brakes hard, because
+        // the standstill MIN_GAP term dominates. A shorter headway never makes contact acceptable.
+        double a = CarFollowingModel.accel(10.0, V0, 10.0, 1.0, VehicleType.CAR, 0.5);
+        assertTrue(a < -VehicleType.CAR.comfortDecel(), "a 1m gap must still brake hard regardless of headway");
+    }
 }
