@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -34,11 +35,19 @@ public class SignalController {
 
     private record GreenGroup(String name, Set<Mv> green, boolean preempt) {}
 
+    /** Minimum a protected-left green runs once entered, so a car already rolling into its turn is
+     *  never stranded by an immediate gap-out. Below the fixed left-green so actuation still helps. */
+    private static final double LEFT_MIN_GREEN_MS = 2500.0;
+
     private final SimulationControls controls;
     private final List<GreenGroup> ring;
     private final AtomicReference<Approach> preemptRequest = new AtomicReference<>(null);
     private final AtomicBoolean resetRequested = new AtomicBoolean(false);
     private final AtomicReference<SignalState> state;
+    // Left-turn demand per axis, written by the engine each tick (see reportLeftDemand). Drives
+    // actuation so the ring never freezes every approach at red for a left phase nobody is using.
+    private final AtomicInteger nsLeftWaiting = new AtomicInteger(0);
+    private final AtomicInteger ewLeftWaiting = new AtomicInteger(0);
 
     /** Timing the engine needs to gate box entry: time left on the current green, and the
      *  yellow+all-red clearance that follows it. */
@@ -101,6 +110,32 @@ public class SignalController {
 
     public Approach preemptApproach() {
         return preemptRequest.get();
+    }
+
+    /**
+     * Report how many left-turning vehicles are currently approaching each axis (within the
+     * detection zone, still short of the stop line). Called by the engine each tick. This drives
+     * <em>actuation</em> of the two protected-left phases:
+     * <ul>
+     *   <li>a left phase with zero waiting demand is skipped entirely, rather than stopping every
+     *       approach for a movement nobody is making;</li>
+     *   <li>a running left green gaps out (ends early) once its queue has cleared the stop line.</li>
+     * </ul>
+     * Safety is unaffected: skips happen only at the start of a fresh green (after an all-red), and
+     * a gap-out is an ordinary green-to-yellow transition, so every green is still followed by the
+     * yellow + all-red clearance and two conflicting movements are never simultaneously non-red.
+     */
+    public void reportLeftDemand(int nsWaiting, int ewWaiting) {
+        nsLeftWaiting.set(Math.max(0, nsWaiting));
+        ewLeftWaiting.set(Math.max(0, ewWaiting));
+    }
+
+    private static boolean isLeftGroup(GreenGroup g) {
+        return g.name().equals("NS_LEFT") || g.name().equals("EW_LEFT");
+    }
+
+    private int leftDemand(GreenGroup g) {
+        return g.name().equals("NS_LEFT") ? nsLeftWaiting.get() : ewLeftWaiting.get();
     }
 
     public SignalState currentState() {
@@ -174,6 +209,16 @@ public class SignalController {
             return;
         }
 
+        // Actuated gap-out: a protected-left green ends as soon as its queue has cleared the stop
+        // line (no left-turner still waiting on this axis), instead of holding every other approach
+        // at red for the full fixed duration. A short minimum green protects a car already turning.
+        if (sub == Sub.GREEN && !current.preempt() && isLeftGroup(current)
+                && subElapsedMs >= LEFT_MIN_GREEN_MS && leftDemand(current) == 0) {
+            sub = Sub.YELLOW;
+            subElapsedMs = 0;
+            return;
+        }
+
         double dur = currentSubDurationMs();
         while (subElapsedMs >= dur) {
             subElapsedMs -= dur;
@@ -202,7 +247,17 @@ public class SignalController {
         if (pre != null) {
             return preemptGroup(pre);
         }
-        ringIndex = (ringIndex + 1) % ring.size();
+        // Advance around the ring, skipping any protected-left phase that has no waiting left-turners:
+        // running it would stop every approach for a movement nobody is making. The ring always holds
+        // the two through phases, so at most a couple of hops land on a phase worth serving. A skipped
+        // phase is simply never entered, so no extra yellow/all-red is spent on it.
+        for (int hop = 0; hop < ring.size(); hop++) {
+            ringIndex = (ringIndex + 1) % ring.size();
+            GreenGroup g = ring.get(ringIndex);
+            if (!isLeftGroup(g) || leftDemand(g) > 0) {
+                return g;
+            }
+        }
         return ring.get(ringIndex);
     }
 

@@ -68,6 +68,8 @@ class SignalControllerTest {
 
     @Test
     void cycleVisitsAllFourGreenGroups() {
+        // With standing left-turn demand on both axes, the actuated ring still serves every group.
+        signals.reportLeftDemand(3, 3);
         boolean nsThrough = false, nsLeft = false, ewThrough = false, ewLeft = false;
         for (long t = 0; t <= 300_000; t += 50) {
             signals.stepTo(t);
@@ -78,7 +80,57 @@ class SignalControllerTest {
             if (phase.equals("EW_LEFT")) ewLeft = true;
         }
         assertTrue(nsThrough && nsLeft && ewThrough && ewLeft,
-                "the ring should visit all four protected green groups");
+                "the ring should visit all four protected green groups when every movement has demand");
+    }
+
+    @Test
+    void emptyProtectedLeftPhasesAreSkipped() {
+        // No left-turn demand reported (the default): the ring must never enter a protected-left
+        // phase, because doing so would stop every approach for a movement nobody is making.
+        boolean nsThrough = false, ewThrough = false, anyLeft = false;
+        for (long t = 0; t <= 300_000; t += 50) {
+            signals.stepTo(t);
+            String phase = signals.currentState().phase();
+            if (phase.equals("NS_THROUGH")) nsThrough = true;
+            if (phase.equals("EW_THROUGH")) ewThrough = true;
+            if (phase.equals("NS_LEFT") || phase.equals("EW_LEFT")) anyLeft = true;
+            assertConflictFree(signals.currentState());
+        }
+        assertTrue(nsThrough && ewThrough, "the two through phases must still alternate");
+        assertFalse(anyLeft, "an empty protected-left phase must be skipped entirely");
+    }
+
+    @Test
+    void leftPhaseGapsOutOnceItsQueueClears() {
+        // Demand on the NS left lane only: the phase must be served, but once its queue clears the
+        // line (demand drops to zero) it must gap out instead of holding the full fixed green.
+        signals.reportLeftDemand(2, 0);
+        long t = 0;
+        long nsLeftStart = -1, nsLeftEnd = -1;
+        boolean cleared = false;
+        for (; t <= 120_000; t += 50) {
+            signals.stepTo(t);
+            String phase = signals.currentState().phase();
+            if (phase.equals("NS_LEFT")) {
+                if (nsLeftStart < 0) {
+                    nsLeftStart = t;
+                }
+                // Once the green has opened, the queue clears the stop line: demand goes to zero.
+                if (t - nsLeftStart >= 1000 && !cleared) {
+                    signals.reportLeftDemand(0, 0);
+                    cleared = true;
+                }
+            } else if (nsLeftStart >= 0 && nsLeftEnd < 0 && cleared) {
+                nsLeftEnd = t;
+                break;
+            }
+        }
+        assertTrue(nsLeftStart >= 0, "the NS left phase should be served while it has demand");
+        assertTrue(nsLeftEnd >= 0, "the NS left phase should end after its queue clears");
+        double served = (nsLeftEnd - nsLeftStart) / 1000.0;
+        double fixedGreen = new SimulationControls(new SimulationProperties()).getLeftGreenSeconds();
+        assertTrue(served < fixedGreen,
+                "a gapped-out left phase (" + served + "s) must be shorter than the fixed green (" + fixedGreen + "s)");
     }
 
     @Test

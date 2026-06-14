@@ -15,6 +15,7 @@ import com.trafficflow.geometry.IntersectionLayout;
 import com.trafficflow.geometry.LanePath;
 import com.trafficflow.geometry.Pose;
 import com.trafficflow.model.Approach;
+import com.trafficflow.model.Axis;
 import com.trafficflow.model.LaneId;
 import com.trafficflow.model.Movement;
 import com.trafficflow.model.SignalColor;
@@ -87,6 +88,9 @@ public class SimulationEngine {
     private static final double CLEAR_SPEED_EST = 4.5;
     /** Two cross-axis vehicles closer than this inside the box count as a conflict (meters). */
     private static final double BOX_CONFLICT_DIST = 4.0;
+    /** How far back from the stop line a left-turner still counts as demand for actuating its phase
+     *  (meters). Beyond this it is too far away to hold every other approach at red. */
+    private static final double LEFT_DETECT_M = 75.0;
 
     private final SimulationProperties props;
     private final IntersectionLayout layout;
@@ -305,6 +309,7 @@ public class SimulationEngine {
 
     private void physicsStep(double dt) {
         drainCommands();
+        reportLeftTurnDemand();
         int planned = worldVehicles.size();
         SignalState signals = signalController.currentState();
         List<LaneSlice> slices = buildLaneSlices();
@@ -366,6 +371,33 @@ public class SimulationEngine {
         while ((c = commandQueue.poll()) != null) {
             applyCommand(c);
         }
+    }
+
+    /**
+     * Count the left-turning vehicles approaching each axis (still short of the stop line, within
+     * the detection zone) and hand the totals to the signal controller, which uses them to skip an
+     * empty protected-left phase and to gap a left green out once its queue has cleared. Runs on the
+     * clock thread before planning, reading the engine-owned vehicle list with no extra locking.
+     */
+    private void reportLeftTurnDemand() {
+        double stopLineS = layout.stopLineS();
+        int ns = 0;
+        int ew = 0;
+        for (Vehicle v : worldVehicles) {
+            if (v.laneId.movement() != Movement.LEFT) {
+                continue;
+            }
+            double behindLine = stopLineS - v.s;
+            if (behindLine <= 0 || behindLine > LEFT_DETECT_M) {
+                continue; // already past the stop line, or too far back to hold the phase
+            }
+            if (v.laneId.approach().axis() == Axis.NS) {
+                ns++;
+            } else {
+                ew++;
+            }
+        }
+        signalController.reportLeftDemand(ns, ew);
     }
 
     private void applyCommand(ControlCommand c) {

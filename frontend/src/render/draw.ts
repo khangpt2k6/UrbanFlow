@@ -858,8 +858,19 @@ function leftArrow(ctx: CanvasRenderingContext2D, x: number, y: number, r: numbe
   // point the arrow toward the approach's left-turn direction (just a visual cue)
   const rot: Record<string, number> = { NORTH: 0, SOUTH: Math.PI, EAST: -Math.PI / 2, WEST: Math.PI / 2 };
   ctx.rotate(rot[ax] ?? 0);
+  // A lit left arrow is the ONLY green during a protected-left phase (all three through bulbs are
+  // red), so make it unmistakable: a bright halo behind the lens so the phase never reads as a dead
+  // all-red where every approach is stopped for no reason.
+  if (on) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = 'rgba(40,209,124,0.22)';
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.fillStyle = color;
-  if (on) { ctx.shadowColor = color; ctx.shadowBlur = 12; }
+  if (on) { ctx.shadowColor = color; ctx.shadowBlur = 14; }
   ctx.beginPath();
   ctx.moveTo(-r, 0);
   ctx.lineTo(r * 0.5, -r);
