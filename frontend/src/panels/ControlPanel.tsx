@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import type { ControlPayload } from '../stomp/useTrafficStream';
 
 interface Props {
@@ -14,44 +14,6 @@ interface SliderProps {
   value: number;
   unit?: string;
   onChange: (v: number) => void;
-}
-
-// A cartoon dropdown to replace the native <select>, whose open list the OS draws and CSS can't
-// touch. This one is fully styleable: a rounded button with a spinning chevron and a popup of
-// rounded options. Closes on outside click.
-function Dropdown({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [open]);
-  return (
-    <div className="uf-select" ref={ref}>
-      <button type="button" className={`uf-select-btn ${open ? 'open' : ''}`} onClick={() => setOpen((o) => !o)}>
-        <span>{value}</span>
-        <svg className="uf-select-chev" width="16" height="16" viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M6 9l6 6 6-6" />
-        </svg>
-      </button>
-      {open && (
-        <div className="uf-select-menu">
-          {options.map((opt) => (
-            <button type="button" key={opt} className={`uf-select-opt ${opt === value ? 'sel' : ''}`}
-              onClick={() => { onChange(opt); setOpen(false); }}>
-              <span>{opt}</span>
-              {opt === value && <span className="uf-select-check">✓</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function Slider({ label, min, max, step, value, unit, onChange }: SliderProps) {
@@ -85,7 +47,6 @@ export default function ControlPanel({ send, connected }: Props) {
   const [leftGreen, setLeftGreen] = useState(5);
   const [yellow, setYellow] = useState(3);
   const [allRed, setAllRed] = useState(2);
-  const [approach, setApproach] = useState('NORTH');
   const [paused, setPaused] = useState(false);
   const [showSignals, setShowSignals] = useState(false);
 
@@ -141,14 +102,6 @@ export default function ControlPanel({ send, connected }: Props) {
             {m.label}
           </button>
         ))}
-      </div>
-
-      <div className="emergency-row">
-        <Dropdown value={approach} options={['NORTH', 'SOUTH', 'EAST', 'WEST']} onChange={setApproach} />
-        <button className="icon-btn" title="Dispatch ambulance"
-          onClick={() => send({ type: 'spawnEmergency', vehicleType: 'AMBULANCE', approach })}>🚑</button>
-        <button className="icon-btn" title="Dispatch fire truck"
-          onClick={() => send({ type: 'spawnEmergency', vehicleType: 'FIRETRUCK', approach })}>🚒</button>
       </div>
 
       <button className={`btn-primary ${paused ? 'start' : 'stop'}`} onClick={togglePause}>
