@@ -91,4 +91,22 @@ class SimulationEngineSafetyTest {
                 "density should stabilize near the default target, was " + count);
         assertEquals(0, engine.collisions());
     }
+
+    @Test
+    void autoDispatchesEmergenciesWithoutUserInput() {
+        // No manual dispatch: an ambulance or fire truck must still appear on its own over time,
+        // and (like every other vehicle) must never collide.
+        boolean sawEmergency = false;
+        for (int i = 0; i < 2000 && !sawEmergency; i++) {
+            engine.runDeterministic(1);
+            for (var st : engine.currentStates()) {
+                if (st.type().emergency()) {
+                    sawEmergency = true;
+                    break;
+                }
+            }
+        }
+        assertTrue(sawEmergency, "an emergency vehicle should be auto-dispatched within ~60s of sim time");
+        assertEquals(0, engine.collisions(), "auto-dispatched emergencies must also be collision-free");
+    }
 }

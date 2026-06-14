@@ -91,6 +91,11 @@ public class SimulationEngine {
     /** How far back from the stop line a left-turner still counts as demand for actuating its phase
      *  (meters). Beyond this it is too far away to hold every other approach at red. */
     private static final double LEFT_DETECT_M = 75.0;
+    /** Sim-time window between two self-dispatched emergencies (ms): a random gap in this range. */
+    private static final long AUTO_EMERGENCY_MIN_MS = 18_000;
+    private static final long AUTO_EMERGENCY_MAX_MS = 34_000;
+    /** Sim time of the first self-dispatched emergency after a (re)start, so one appears promptly. */
+    private static final long AUTO_EMERGENCY_FIRST_MS = 9_000;
 
     private final SimulationProperties props;
     private final IntersectionLayout layout;
@@ -117,6 +122,10 @@ public class SimulationEngine {
     private final double baseDt;
     private double stepAccumulator = 0;
     private long lastTickNanos = 0L;
+    // Auto-dispatched emergencies: an ambulance or fire truck enters on its own every so often
+    // (sim time, so it honours pause and the speed slider) without the user pressing a button.
+    private final Random autoEmergencyRng;
+    private volatile long nextAutoEmergencyMs;
     /** The world only advances while at least one browser is connected (set from STOMP session
      *  events). With nobody watching the simulation stays idle and the road is empty. */
     private volatile boolean clientsConnected = false;
@@ -168,6 +177,10 @@ public class SimulationEngine {
         this.statsExecutor = statsExecutor;
         this.broadcastExecutor = broadcastExecutor;
         this.rng = new Random(props.getRandomSeed());
+        // A separate stream so auto-emergency timing never perturbs the civilian-spawn RNG; it is
+        // touched only on the spawner thread, never concurrently with rng on the clock thread.
+        this.autoEmergencyRng = new Random(props.getRandomSeed() ^ 0x5DEECE66DL);
+        this.nextAutoEmergencyMs = AUTO_EMERGENCY_FIRST_MS;
         this.baseDt = props.tickDtSeconds();
     }
 
@@ -288,6 +301,26 @@ public class SimulationEngine {
         for (int i = 0; i < n; i++) {
             enqueue(new ControlCommand.SpawnCivilian());
         }
+        maybeAutoDispatchEmergency();
+    }
+
+    /**
+     * Periodically send an ambulance or fire truck into the world on its own, on a random approach,
+     * so the emergency-preemption behaviour is visible without the user pressing a button. The
+     * interval is measured in <em>sim</em> time (via {@link #simClockMs}), so it slows under a low
+     * speed multiplier and pauses with the world. The spawn itself is enqueued as a normal command
+     * and performed on the clock thread, which also publishes the "dispatched" alert toast.
+     */
+    private void maybeAutoDispatchEmergency() {
+        long nowSim = simClockMs.get();
+        if (nowSim < nextAutoEmergencyMs) {
+            return;
+        }
+        VehicleType type = autoEmergencyRng.nextBoolean() ? VehicleType.AMBULANCE : VehicleType.FIRETRUCK;
+        Approach approach = Approach.values()[autoEmergencyRng.nextInt(Approach.values().length)];
+        enqueue(new ControlCommand.SpawnEmergency(type, approach));
+        long span = AUTO_EMERGENCY_MAX_MS - AUTO_EMERGENCY_MIN_MS;
+        nextAutoEmergencyMs = nowSim + AUTO_EMERGENCY_MIN_MS + (long) (autoEmergencyRng.nextDouble() * span);
     }
 
     private void statsTick() {
@@ -692,6 +725,9 @@ public class SimulationEngine {
         controls.resetToDefaults();
         signalController.requestReset();
         emergencyDispatcher.reset();
+        // Restart the auto-emergency clock from the freshly zeroed sim time, so the first one after
+        // a reset arrives on the same schedule as a fresh launch instead of firing immediately.
+        nextAutoEmergencyMs = AUTO_EMERGENCY_FIRST_MS;
     }
 
     // ---------------------------------------------------------------------------------------
@@ -708,6 +744,7 @@ public class SimulationEngine {
             for (int j = 0; j < n; j++) {
                 enqueue(new ControlCommand.SpawnCivilian());
             }
+            maybeAutoDispatchEmergency(); // mirror the spawner tick so auto-emergencies are exercised too
             physicsStep(baseDt);
             signalController.stepTo(simClockMs.get());
             emergencyDispatcher.update(publishedStates.get());
