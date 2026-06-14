@@ -1,5 +1,6 @@
 server:
-  port: 8080
+  # Bind to the platform-provided port in production (Render/Heroku set $PORT), 8080 locally.
+  port: ${PORT:8080}
 
 spring:
   application:

@@ -1,0 +1,21 @@
+# Render Blueprint for the UrbanFlow backend (the Spring Boot engine).
+# Render's free Web Service is a persistent container, so it can hold the STOMP/WebSocket feed
+# open - which Vercel's serverless functions cannot. Push this repo, then in the Render dashboard
+# choose "New +" -> "Blueprint" and point it at the repo; this file provisions the service.
+#
+# The frontend is a static Vite build and is deployed separately to Vercel (see DEPLOYMENT.md).
+services:
+  - type: web
+    name: urbanflow-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    # No healthCheckPath: the app exposes only /ws + /api, not a 200 root, so let Render use its
+    # default open-port check. Add spring-boot-starter-actuator and set this to /actuator/health
+    # for a richer probe if you want one.
+    autoDeploy: true
+    envVars:
+      # Give the JVM a sane heap for Render's 512 MB free instance.
+      - key: JAVA_TOOL_OPTIONS
+        value: -Xmx400m

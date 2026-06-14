@@ -4,7 +4,10 @@ import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import type { AlertMessage, SimulationStats, WorldSnapshot } from '../types/snapshot';
 
-const WS_URL = 'http://localhost:8080/ws';
+// SockJS endpoint of the backend. In production set VITE_WS_URL at build time to the deployed
+// backend's /ws URL (e.g. https://urbanflow-backend.onrender.com/ws); locally it defaults to the
+// dev server. SockJS wants an http(s):// URL, not ws://, even though it upgrades to a WebSocket.
+const WS_URL = import.meta.env.VITE_WS_URL ?? 'http://localhost:8080/ws';
 
 /** How long an alert toast stays on screen before it auto-dismisses (ms). */
 const ALERT_TTL_MS = 5000;
