@@ -10,7 +10,7 @@ simulation:
   worker-threads: 24
   # Ticks per second (Hz). At 30 Hz the engine sustains 2,100+ vehicle-updates/sec (tested floor).
   tick-hz: 30
-  # Target number of concurrent vehicles (density default, mirrors the Normal preset). Up to 200 is
+  # Target number of concurrent vehicles (density default, mirrors the Normal preset). Up to 120 is
   # supported via the control panel. Normal (50) runs the intersection busy with standing queues
   # that clear each green; Rush Hour (100) deliberately saturates it so queues spill down the
   # approaches; Sparse (25) flows freely.

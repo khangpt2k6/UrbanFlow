@@ -22,7 +22,7 @@ export default function WelcomePage({ onLaunch }: Props) {
         </h1>
         <p className="welcome-tag">
           A concurrent traffic-control engine in Java, streamed live to your browser. Watch up to
-          200 vehicles negotiate a signalized intersection with zero collisions, in real time.
+          120 vehicles negotiate a signalized intersection with zero collisions, in real time.
         </p>
 
         <button className="launch-btn" onClick={onLaunch}>

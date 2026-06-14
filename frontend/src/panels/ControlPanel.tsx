@@ -131,7 +131,7 @@ export default function ControlPanel({ send, connected }: Props) {
 
       <Slider label="Speed" min={0.25} max={4} step={0.25} value={speed} unit="x"
         onChange={(v) => { setSpeed(v); send({ type: 'setSpeed', value: v }); }} />
-      <Slider label="Density" min={0} max={200} step={1} value={density}
+      <Slider label="Density" min={0} max={120} step={1} value={density}
         onChange={(v) => { setDensity(v); setMode(''); send({ type: 'setDensity', count: v }); }} />
 
       <div className="modes">

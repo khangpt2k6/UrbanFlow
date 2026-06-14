@@ -59,7 +59,7 @@ npm run dev
 
 Open the URL Vite prints (usually `http://localhost:5173`) and press **Launch simulation**. Start the backend first, then the frontend.
 
-> The control panel on the right lets you change traffic density live (up to 200 vehicles), retime the signals, and dispatch an ambulance or fire truck that flips the lights in its favour.
+> The control panel on the right lets you change traffic density live (up to 120 vehicles), retime the signals, and dispatch an ambulance or fire truck that flips the lights in its favour.
 
 ## The hard part: a hundred cars all thinking at once
 

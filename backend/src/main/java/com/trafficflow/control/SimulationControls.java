@@ -50,7 +50,7 @@ public class SimulationControls {
     public void setSpeedMultiplier(double v) { this.speedMultiplier = clamp(v, 0.1, 8.0); }
 
     public int getTargetVehicles() { return targetVehicles.get(); }
-    public void setTargetVehicles(int v) { this.targetVehicles.set((int) clamp(v, 0, 200)); }
+    public void setTargetVehicles(int v) { this.targetVehicles.set((int) clamp(v, 0, 120)); }
 
     public double getNsGreenSeconds() { return nsGreenSeconds; }
     public void setNsGreenSeconds(double v) { this.nsGreenSeconds = clamp(v, 3.0, 60.0); }
