@@ -157,9 +157,9 @@
 .metric-value { font-size: 16px; font-weight: 900; font-family: ui-monospace, monospace; }
 .metric-label { font-size: 10px; color: var(--muted); margin-top: 1px; text-transform: uppercase; letter-spacing: 0.3px; font-weight: 700; }
 
-.legend { margin-top: 7px; padding-top: 7px; border-top: 2px dashed var(--border); display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px 7px; }
-.leg { display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; }
-.leg-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.15); }
+.legend { margin-top: 7px; padding-top: 7px; border-top: 2px dashed var(--border); display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; }
+.leg { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 700; }
+.leg-icon { flex-shrink: 0; display: block; }
 .leg-label { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .leg-count { font-family: ui-monospace, monospace; font-weight: 800; }
 
