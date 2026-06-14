@@ -55,6 +55,10 @@ export function drawScene(
   signals: SignalState | null,
   nowMs: number,
   simTimeMs: number | null,
+  // Sim-seconds elapsing per wall-second right now (0 when paused/stalled, 1 at 1x, 2 at 2x...).
+  // Lets the pedestrians advance smoothly every animation frame instead of hopping once per
+  // network snapshot, while still tracking the speed slider and freezing on pause.
+  simSpeed = 1,
 ) {
   const g = ctx.createLinearGradient(0, 0, 0, canvasH);
   g.addColorStop(0, C.bg);
@@ -70,7 +74,7 @@ export function drawScene(
   drawLaneMarkings(ctx, view);
   drawStopLines(ctx, view);
   for (const v of vehicles) drawVehicle(ctx, view, v, nowMs);
-  drawPedestrians(ctx, view, signals, vehicles, nowMs, simTimeMs);
+  drawPedestrians(ctx, view, signals, vehicles, nowMs, simTimeMs, simSpeed);
   if (signals) drawSignals(ctx, view, signals);
   if (signals) drawPedSignals(ctx, view, signals);
   drawCompass(ctx, canvasW, canvasH);
@@ -401,7 +405,7 @@ function buildRoute(o: Loc, d: Loc): RoutePt[] {
 let walkers: Walker[] = [];
 let spawnAccMs = 0;
 let lastSnapMs = -1;            // last world sim clock seen; a drop means the world was reset
-let lastPedSimMs = -1;          // last sim clock used to advance walkers; drives fps-independent motion
+let lastPedWallMs = -1;         // last wall clock used to advance walkers; drives smooth per-frame motion
 // Pedestrian clearance interval: learn each through-green's length (wall-clock, so it tracks the
 // speed multiplier) and how much remains, so a walker only steps off with time to finish crossing.
 let ewGreenStartMs = -1, ewGreenLenMs = 18000, prevEWGreen = false;
@@ -545,7 +549,7 @@ export const __pedTest = {
   PED_KERB, PED_LAT, CROSS_LAT, CROSS_SPEEDUP, PED_CLEAR_MS,
 };
 
-function drawPedestrians(ctx: CanvasRenderingContext2D, view: View, signals: SignalState | null, vehicles: VehicleView[], nowMs: number, simTimeMs: number | null) {
+function drawPedestrians(ctx: CanvasRenderingContext2D, view: View, signals: SignalState | null, vehicles: VehicleView[], nowMs: number, simTimeMs: number | null, simSpeed: number) {
   // World reset: the engine zeroes its sim clock, so a backward jump means Reset was pressed.
   // Clear the walkers and respawn a fresh population so the pedestrians reset along with the cars.
   if (simTimeMs != null) {
@@ -568,13 +572,15 @@ function drawPedestrians(ctx: CanvasRenderingContext2D, view: View, signals: Sig
   walkLeftForNS = ewG ? ewGreenLenMs - (nowMs - ewGreenStartMs) : 0;
   walkLeftForEW = nsG ? nsGreenLenMs - (nowMs - nsGreenStartMs) : 0;
 
-  // Drive walker motion by the SIM clock, not the render frame rate. A low-fps machine (the kind that
-  // lags) used to clamp the frame delta and put the walkers into slow motion, so they crawled across
-  // and lingered on the road. Using the sim-time delta keeps their speed correct at any frame rate; a
-  // paused/stalled feed gives delta 0 (they hold), and a big hitch is capped so they never teleport.
+  // Drive walker motion by the WALL clock (one increment per animation frame), scaled by the live
+  // sim-speed factor. Stepping by the sim-time delta instead made the walkers hop once per network
+  // snapshot (~30 Hz) while the cars glided along their interpolation - that mismatch is the crosswalk
+  // "stutter". Per-frame wall time is smooth at the display's 60 Hz; multiplying by simSpeed keeps
+  // their pace correct as the speed slider moves and freezes them when paused (simSpeed 0). The
+  // per-frame delta is capped so a backgrounded tab resuming never teleports a walker across the road.
   let dt = 0;
-  if (lastPedSimMs >= 0 && simTimeMs != null) dt = Math.min(0.2, Math.max(0, (simTimeMs - lastPedSimMs) / 1000));
-  if (simTimeMs != null) lastPedSimMs = simTimeMs;
+  if (lastPedWallMs >= 0) dt = Math.min(0.1, Math.max(0, (nowMs - lastPedWallMs) / 1000)) * Math.max(0, simSpeed);
+  lastPedWallMs = nowMs;
   const dtMs = dt * 1000;
 
   if (dt > 0) {
