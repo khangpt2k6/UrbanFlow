@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import type { WorldSnapshot } from '../types/snapshot';
 import { makeView } from './layout';
-import { interpolateVehicles } from './interpolate';
+import { interpolatePedestrians, interpolateVehicles } from './interpolate';
 import { drawScene } from './draw';
 
 interface Props {
@@ -54,16 +54,12 @@ export default function CanvasView({ latestRef, prevRef, lastArrivalRef, interva
       const vehicles = latest
         ? interpolateVehicles(prev?.vehicles ?? null, latest.vehicles, alpha)
         : [];
-      // Sim-seconds per wall-second, read from how far the sim clock advanced between the last two
-      // snapshots: ~0 when paused (the clock holds), 1 at 1x, higher with the speed slider. If the
-      // feed stalls (no fresh snapshot for a few intervals) fall back to 0 so the pedestrians hold
-      // instead of drifting on stale data. The canvas uses it to animate walkers smoothly per frame.
-      const stalled = now - lastArrivalRef.current > intervalRef.current * 3;
-      let simSpeed = 0;
-      if (latest && prev && !stalled && intervalRef.current > 0) {
-        simSpeed = Math.max(0, Math.min(8, (latest.simTimeMs - prev.simTimeMs) / intervalRef.current));
-      }
-      drawScene(ctx, view, w, h, vehicles, latest?.signals ?? null, now, latest?.simTimeMs ?? null, simSpeed);
+      // Walkers arrive in the same snapshots as the vehicles (they are simulated in the backend),
+      // so they get the same treatment: blend the last two snapshots for smooth per-frame motion.
+      const pedestrians = latest
+        ? interpolatePedestrians(prev?.pedestrians ?? null, latest.pedestrians ?? [], alpha)
+        : [];
+      drawScene(ctx, view, w, h, vehicles, pedestrians, latest?.signals ?? null, now);
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);

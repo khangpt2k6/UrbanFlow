@@ -81,6 +81,11 @@ class SimulationEngineSafetyTest {
         assertTrue(engine.clearedTotal() > 0, "vehicles should clear the intersection over time");
         assertTrue(engine.updatesProcessed() > 100_000,
                 "many vehicle-updates should have been processed, was " + engine.updatesProcessed());
+        // The collision counter above covers walkers too (checkPedestrians feeds it), so a
+        // populated pavement plus zero collisions proves cars and people share the road safely.
+        assertTrue(engine.currentPedestrians().size() >= 6,
+                "pedestrians should be simulated alongside the traffic, saw "
+                        + engine.currentPedestrians().size());
     }
 
     @Test

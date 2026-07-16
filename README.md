@@ -104,8 +104,9 @@ To get to zero crashes, the cars follow the same etiquette we all learned for th
 - **Never block the box.** A car only enters the middle if it can make it all the way out, which makes gridlock impossible.
 - **A red light is a wall.** Cars stop cleanly at the line and wait their turn.
 - **Make way for sirens.** An ambulance or fire truck flips the lights in its favour and everyone yields.
+- **People go first.** Pedestrians are simulated in the engine too: they cross only on their WALK phase, into a clean gap, with enough green left to finish - and while anyone is on a crosswalk, every car whose route sweeps it holds at the stop line.
 
-A watcher checks the whole road on every heartbeat and confirms no two vehicles ever overlap. The zero you see on screen is not a hope, it is verified thousands of times a second.
+A watcher checks the whole road on every heartbeat and confirms no two vehicles ever overlap - and that no car ever touches a walker on the carriageway. The zero you see on screen is not a hope, it is verified thousands of times a second.
 
 ## Proving it under load (k6)
 
@@ -137,7 +138,9 @@ A run on a laptop, 50 VUs for 60 seconds at full 120-vehicle density: ~1,600 mes
 
 ## A living city
 
-Nine kinds of vehicle, from a bicycle up to a fire truck, each with its own size and feel: a bus is heavy and slow off the line, a motorbike is nimble, and nothing ever spills over its lane lines. When a car slows and stops, its brake lights glow red, so a queue waiting at a light reads as patient rather than frozen. Around the crossing sits a small hand-drawn city: dense blocks of towers, footpaths, protected bike lanes, street trees, and people who walk from door to door and cross only at the crosswalks when their light turns.
+Nine kinds of vehicle, from a bicycle up to a fire truck, each with its own size and feel: a bus is heavy and slow off the line, a motorbike is nimble, and nothing ever spills over its lane lines. When a car slows and stops, its brake lights glow red, so a queue waiting at a light reads as patient rather than frozen. Around the crossing sits a small hand-drawn city: dense blocks of towers, footpaths, protected bike lanes and street trees.
+
+The people are not decoration. Pedestrians are simulated in the backend engine on the same clock as the cars and streamed in every snapshot: they stroll the footpaths, wait at the kerb for their WALK phase, hurry across the carriageway, and despawn at their destination. Cars yield to them at the stop line, and the same safety monitor that proves cars never crash also proves no car ever touches a walker.
 
 ## Tech stack
 

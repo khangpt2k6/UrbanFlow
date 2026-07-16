@@ -35,6 +35,8 @@ public class SimulationProperties {
     private double allRedSeconds = 2.0;
     /** Distance before the stop line at which an emergency vehicle triggers preemption. */
     private double emergencyTriggerM = 80.0;
+    /** Target number of simulated pedestrians walking the footpaths and crosswalks. */
+    private int targetPedestrians = 8;
 
     public int getWorkerThreads() { return workerThreads; }
     public void setWorkerThreads(int v) { this.workerThreads = v; }
@@ -71,6 +73,9 @@ public class SimulationProperties {
 
     public double getEmergencyTriggerM() { return emergencyTriggerM; }
     public void setEmergencyTriggerM(double v) { this.emergencyTriggerM = v; }
+
+    public int getTargetPedestrians() { return targetPedestrians; }
+    public void setTargetPedestrians(int v) { this.targetPedestrians = v; }
 
     public double tickDtSeconds() {
         return 1.0 / tickHz;

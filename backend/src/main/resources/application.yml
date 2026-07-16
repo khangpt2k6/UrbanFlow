@@ -32,6 +32,9 @@ simulation:
   all-red-seconds: 2.0
   # Distance (m) before the stop line at which an emergency vehicle triggers preemption.
   emergency-trigger-m: 80.0
+  # Simulated pedestrians walking the footpaths and crossing at the crosswalks. They are real
+  # backend agents: they cross only on their WALK phase and vehicles yield to them at the line.
+  target-pedestrians: 8
 
 logging:
   level:

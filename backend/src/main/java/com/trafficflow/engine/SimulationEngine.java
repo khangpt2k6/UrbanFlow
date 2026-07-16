@@ -18,6 +18,7 @@ import com.trafficflow.model.Approach;
 import com.trafficflow.model.Axis;
 import com.trafficflow.model.LaneId;
 import com.trafficflow.model.Movement;
+import com.trafficflow.model.PedestrianView;
 import com.trafficflow.model.SignalColor;
 import com.trafficflow.model.SignalState;
 import com.trafficflow.model.SimulationStats;
@@ -126,6 +127,7 @@ public class SimulationEngine {
 
     // World state: mutated ONLY on the clock thread.
     private final List<Vehicle> worldVehicles = new ArrayList<>();
+    private final PedestrianSimulator pedestrians;
     private final Random rng;
     private final double baseDt;
     private double stepAccumulator = 0;
@@ -141,6 +143,8 @@ public class SimulationEngine {
     // Cross-thread handoffs.
     private final ConcurrentLinkedQueue<ControlCommand> commandQueue = new ConcurrentLinkedQueue<>();
     private final AtomicReference<List<VehicleState>> publishedStates =
+            new AtomicReference<>(List.of());
+    private final AtomicReference<List<PedestrianView>> publishedPedestrians =
             new AtomicReference<>(List.of());
     private final AtomicReference<WorldSnapshot> currentSnapshot = new AtomicReference<>();
     private final AtomicInteger idCounter = new AtomicInteger(0);
@@ -185,6 +189,10 @@ public class SimulationEngine {
         this.statsExecutor = statsExecutor;
         this.broadcastExecutor = broadcastExecutor;
         this.rng = new Random(props.getRandomSeed());
+        // Own RNG stream so walker routing never perturbs the vehicle-spawn RNG. The simulator
+        // lives on the clock thread with the vehicle list (same single-writer ownership).
+        this.pedestrians = new PedestrianSimulator(props, props.getTargetPedestrians(),
+                props.getRandomSeed() ^ 0x9E3779B97F4A7C15L);
         // A separate stream so auto-emergency timing never perturbs the civilian-spawn RNG; it is
         // touched only on the spawner thread, never concurrently with rng on the clock thread.
         this.autoEmergencyRng = new Random(props.getRandomSeed() ^ 0x5DEECE66DL);
@@ -386,8 +394,11 @@ public class SimulationEngine {
         reportLeftTurnDemand();
         int planned = worldVehicles.size();
         SignalState signals = signalController.currentState();
+        // Crosswalk occupancy from the walkers' current positions: any vehicle whose route
+        // sweeps an occupied crosswalk holds at its stop line this step (see planChunk).
+        boolean[] pedOccupied = pedestrians.occupiedArms();
         List<LaneSlice> slices = buildLaneSlices();
-        List<VehicleUpdate> updates = plan(slices, signals, dt);
+        List<VehicleUpdate> updates = plan(slices, signals, pedOccupied, dt);
         commit(updates);
         updatesProcessed.addAndGet(planned);
         simClockMs.addAndGet(Math.round(dt * 1000.0));
@@ -395,6 +406,13 @@ public class SimulationEngine {
 
         List<VehicleState> states = snapshotStates();
         publishedStates.set(states);
+
+        // Walkers advance after the vehicles commit, on this same clock thread (single-writer
+        // ownership holds). They read the fresh vehicle poses for kerb gap acceptance.
+        pedestrians.step(dt, signals, signalController.phaseTiming().greenRemainingSec(),
+                vehicleWorldRows());
+        List<PedestrianView> pedViews = pedestrians.views();
+        publishedPedestrians.set(pedViews);
 
         List<SafetyMonitor.Violation> violations = safetyMonitor.check(states);
         if (!violations.isEmpty()) {
@@ -407,6 +425,26 @@ public class SimulationEngine {
             collisions.addAndGet(boxConflicts);
             log.warn("BOX CONFLICT x{} (cross traffic met inside the intersection)", boxConflicts);
         }
+
+        List<SafetyMonitor.PedViolation> pedViolations =
+                safetyMonitor.checkPedestrians(states, layout, pedViews);
+        if (!pedViolations.isEmpty()) {
+            collisions.addAndGet(pedViolations.size());
+            log.warn("PEDESTRIAN CONFLICT x{} (first: {})", pedViolations.size(), pedViolations.get(0));
+        }
+    }
+
+    /** World-frame vehicle rows {x, y, speed} for the walkers' kerb gap acceptance. */
+    private double[][] vehicleWorldRows() {
+        double[][] rows = new double[worldVehicles.size()][3];
+        for (int i = 0; i < worldVehicles.size(); i++) {
+            Vehicle v = worldVehicles.get(i);
+            Pose p = v.path.poseAt(v.s);
+            rows[i][0] = p.x();
+            rows[i][1] = p.y();
+            rows[i][2] = v.v;
+        }
+        return rows;
     }
 
     /**
@@ -530,7 +568,8 @@ public class SimulationEngine {
         return slices;
     }
 
-    private List<VehicleUpdate> plan(List<LaneSlice> slices, SignalState signals, double dt) {
+    private List<VehicleUpdate> plan(List<LaneSlice> slices, SignalState signals,
+                                     boolean[] pedOccupied, double dt) {
         if (slices.isEmpty()) {
             return List.of();
         }
@@ -542,12 +581,18 @@ public class SimulationEngine {
         for (LaneSlice slice : slices) {
             int n = slice.size();
             double boxExitS = layout.boxExitS(slice.laneId);
+            // A route sweeps two crosswalks: the entry arm's band (just past the stop line) and
+            // the exit arm's band (just past the box). While either carries a walker, every
+            // vehicle on this lane still short of the stop line holds at the line.
+            Approach entryArm = slice.laneId.approach();
+            Approach exitArm = entryArm.destinationFor(slice.laneId.movement());
+            boolean pedHold = pedOccupied[entryArm.ordinal()] || pedOccupied[exitArm.ordinal()];
             for (int start = 0; start < n; start += CHUNK) {
                 int end = Math.min(n, start + CHUNK);
                 int s0 = start;
                 int s1 = end;
                 tasks.add(() -> planChunk(slice, s0, s1, signals, stopLineS, boxExitS,
-                        greenRemainingSec, clearanceSec, dt));
+                        greenRemainingSec, clearanceSec, pedHold, dt));
             }
         }
         List<VehicleUpdate> updates = new ArrayList<>(worldVehicles.size());
@@ -570,7 +615,8 @@ public class SimulationEngine {
      */
     private List<VehicleUpdate> planChunk(LaneSlice slice, int from, int to,
                                           SignalState signals, double stopLineS, double boxExitS,
-                                          double greenRemainingSec, double clearanceSec, double dt) {
+                                          double greenRemainingSec, double clearanceSec,
+                                          boolean pedHold, double dt) {
         List<VehicleUpdate> out = new ArrayList<>(to - from);
         SignalColor color = signals.colorFor(slice.laneId.approach(), slice.laneId.movement());
         for (int i = from; i < to; i++) {
@@ -625,6 +671,13 @@ public class SimulationEngine {
                 } else if (color == SignalColor.YELLOW) {
                     double stopDist = (v * v) / (2.0 * type.comfortDecel());
                     mustStop = distToStop >= stopDist; // enough room -> stop, else proceed
+                }
+                // Yield to pedestrians: while a crosswalk this route sweeps carries a walker,
+                // hold at the stop line (before the crosswalk bands). Vehicles already past the
+                // line keep rolling - a walker never steps off in front of a moving vehicle (the
+                // kerb gap acceptance), so the band ahead of a committed vehicle stays clear.
+                if (!mustStop && pedHold) {
+                    mustStop = true;
                 }
                 // Time-gate ("don't block the box"): on green, enter the intersection only if the
                 // vehicle can fully clear it before cross traffic gets green - that is, before the
@@ -721,7 +774,8 @@ public class SimulationEngine {
         }
         SignalState signals = signalController.currentState();
         SimulationStats stats = statsAggregator.latest();
-        WorldSnapshot snap = new WorldSnapshot(tickId.get(), simClockMs.get(), views, signals, stats);
+        WorldSnapshot snap = new WorldSnapshot(tickId.get(), simClockMs.get(), views,
+                publishedPedestrians.get(), signals, stats);
         currentSnapshot.set(snap);
         return snap;
     }
@@ -776,6 +830,8 @@ public class SimulationEngine {
 
     private void reset() {
         worldVehicles.clear();
+        pedestrians.reset();
+        publishedPedestrians.set(pedestrians.views());
         idCounter.set(0);
         tickId.set(0);
         simClockMs.set(0);
@@ -824,6 +880,10 @@ public class SimulationEngine {
 
     public List<VehicleState> currentStates() {
         return publishedStates.get();
+    }
+
+    public List<PedestrianView> currentPedestrians() {
+        return publishedPedestrians.get();
     }
 
     public int vehicleCount() {

@@ -11,10 +11,12 @@ import java.util.List;
 public record WorldSnapshot(long tickId,
                             double simTimeMs,
                             List<VehicleView> vehicles,
+                            List<PedestrianView> pedestrians,
                             SignalState signals,
                             SimulationStats stats) {
 
     public WorldSnapshot {
         vehicles = List.copyOf(vehicles);
+        pedestrians = List.copyOf(pedestrians);
     }
 }

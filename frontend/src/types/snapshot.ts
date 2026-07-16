@@ -16,6 +16,16 @@ export interface VehicleView {
   ry: number; // rear-bumper world y
 }
 
+export interface PedestrianView {
+  id: number;
+  x: number; // world x (meters, +x East)
+  y: number; // world y (meters, +y North)
+  fx: number; // unit facing direction x
+  fy: number; // unit facing direction y
+  c: number; // palette index
+  crossing: boolean; // currently on a carriageway
+}
+
 export interface SignalState {
   phase: string;
   through: Record<ApproachName, SignalColor>;
@@ -40,6 +50,7 @@ export interface WorldSnapshot {
   tickId: number;
   simTimeMs: number;
   vehicles: VehicleView[];
+  pedestrians: PedestrianView[];
   signals: SignalState;
   stats: SimulationStats;
 }
