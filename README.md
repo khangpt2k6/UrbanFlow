@@ -15,6 +15,7 @@ A concurrent traffic-control engine in Java, streamed live to a React + Canvas c
 <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white">
 <img alt="Vite" src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white">
 <img alt="WebSocket" src="https://img.shields.io/badge/STOMP-WebSocket-010101?logo=socketdotio&logoColor=white">
+<img alt="k6" src="https://img.shields.io/badge/k6-load%20tested-7D64FF?logo=k6&logoColor=white">
 
 </div>
 
@@ -106,6 +107,30 @@ To get to zero crashes, the cars follow the same etiquette we all learned for th
 
 A watcher checks the whole road on every heartbeat and confirms no two vehicles ever overlap. The zero you see on screen is not a hope, it is verified thousands of times a second.
 
+## Proving it under load (k6)
+
+Claims are cheap, so there is a [k6](https://k6.io) load test that swarms the engine the same way real browsers would. Each virtual user opens a WebSocket, does the STOMP handshake, and subscribes to the world and stats streams; before the swarm arrives, the script plays operator and pushes density to the full 120 vehicles so the engine is tested at peak.
+
+```bash
+# terminal 1: start the backend
+cd backend && mvn spring-boot:run
+
+# terminal 2: unleash 50 concurrent spectators for ~60s
+k6 run loadtest/k6-stomp-load.js
+
+# or crank it up
+k6 run -e VUS=100 -e SESSION_SECONDS=90 loadtest/k6-stomp-load.js
+```
+
+The test fails unless all of this holds:
+
+- every VU completes the STOMP handshake
+- the 30 Hz world stream never stutters (p95 gap between frames < 150 ms)
+- the engine reports **zero collisions** for the whole run
+- the operator's density command actually takes effect (100+ live vehicles)
+
+A run on a laptop, 50 VUs for 60 seconds at full 120-vehicle density: ~1,600 messages/s fanned out (15 MB/s), median frame gap 32 ms against a 33 ms target, engine sustaining ~3,400-3,900 vehicle-updates/s, and 0 collisions across the entire test.
+
 <p align="center">
   <img src="docs/img/model.png" alt="Close-up of the intersection: signals, crosswalks and queued cars" width="620">
 </p>
@@ -121,7 +146,7 @@ Nine kinds of vehicle, from a bicycle up to a fire truck, each with its own size
 | Engine | Java 17, Spring Boot 3.2, a fixed-rate scheduler and an immutable snapshot model |
 | Transport | STOMP over WebSocket (SockJS fallback) |
 | Frontend | React 19, TypeScript, Vite, hand-drawn HTML Canvas rendering |
-| Tooling | Maven (backend), npm + Vite (frontend) |
+| Tooling | Maven (backend), npm + Vite (frontend), k6 (WebSocket load testing) |
 
 <div align="center">
 <br>
