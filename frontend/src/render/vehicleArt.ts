@@ -5,6 +5,7 @@
 // to the vehicle centre and rotates to its heading.
 
 import { drawSprite, drawSpriteShadow, getSprite, type Paint, type SpriteName } from './sprites';
+import { glow } from './glow';
 
 function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   const rad = Math.max(0, Math.min(r, w / 2, h / 2));
@@ -222,13 +223,11 @@ function lightBar(ctx: CanvasRenderingContext2D, x: number, W: number, len: numb
   const on = Math.floor(nowMs / 160) % 2 === 0;
   ctx.fillStyle = '#20252c';
   rr(ctx, x - len * 0.2, -W * 0.4, len * 1.4, W * 0.8, 2); ctx.fill();
-  ctx.save();
-  ctx.shadowBlur = W * 0.6;
-  ctx.fillStyle = ctx.shadowColor = on ? lit[0] : dim[0];
+  glow(ctx, x + len / 2, on ? -W * 0.2 : W * 0.2, W * 0.7, on ? lit[0] : lit[1], 0.9);
+  ctx.fillStyle = on ? lit[0] : dim[0];
   rr(ctx, x, -W * 0.36, len, W * 0.34, 1.5); ctx.fill();
-  ctx.fillStyle = ctx.shadowColor = on ? dim[1] : lit[1];
+  ctx.fillStyle = on ? dim[1] : lit[1];
   rr(ctx, x, W * 0.02, len, W * 0.34, 1.5); ctx.fill();
-  ctx.restore();
 }
 
 const SHIRTS = ['#e0533d', '#2f6fd6', '#f2b233', '#3a9d6a', '#7a4fc9', '#e36b9e', '#3b4350', '#f5f5f5'];

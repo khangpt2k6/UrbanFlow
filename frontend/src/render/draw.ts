@@ -3,6 +3,7 @@ import { CROSSWALK_DEPTH, LANE_FIT, LAYOUT, STOP_SETBACK, WORLD_SPAN, roadHalfWi
 import { typeInfo } from './vehicleTypes';
 import { drawVehicleArt, drawVehicleShadow } from './vehicleArt';
 import { drawSprite, drawSpriteShadow, getSprite, type Paint, type SpriteName } from './sprites';
+import { glow } from './glow';
 
 // Aerial-photo palette: muted asphalt, concrete and lawn, so the vehicles and the signal lamps are
 // the only saturated things on the map (the eye goes straight to the traffic).
@@ -673,13 +674,13 @@ function drawVehicle(ctx: CanvasRenderingContext2D, v: VehicleView, s: Shape, no
   drawVehicleArt(ctx, v.t, s.L, s.W, nowMs, v.id);
   // Brake lights glow as the vehicle slows or stops, so a queue reads as braking, not frozen.
   if (v.v < 2.4 && v.t > 0) {
-    const glow = Math.min(1, (2.4 - v.v) / 2.0);
+    const k = Math.min(1, (2.4 - v.v) / 2.0);
     const rx = -s.L / 2 + Math.max(0.8, s.L * 0.02);
     const ry = s.W * (v.t === 1 ? 0 : 0.3);
     const rr = Math.max(0.9, s.W * 0.09);
-    ctx.fillStyle = `rgba(255,40,30,${0.6 + 0.4 * glow})`;
-    ctx.shadowColor = 'rgba(255,30,20,0.95)';
-    ctx.shadowBlur = 8 * glow;
+    glow(ctx, rx, -ry, rr * 3.4, '#ff2a1e', 0.8 * k);
+    if (ry > 0) glow(ctx, rx, ry, rr * 3.4, '#ff2a1e', 0.8 * k);
+    ctx.fillStyle = `rgba(255,40,30,${0.6 + 0.4 * k})`;
     ctx.beginPath(); ctx.arc(rx, -ry, rr, 0, Math.PI * 2); ctx.fill();
     if (ry > 0) { ctx.beginPath(); ctx.arc(rx, ry, rr, 0, Math.PI * 2); ctx.fill(); }
   }
@@ -833,12 +834,11 @@ function lamp(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, c:
     g.addColorStop(0, '#ffffff');
     g.addColorStop(0.35, ASPECT[c]);
     g.addColorStop(1, ASPECT[c]);
-    ctx.save();
-    ctx.shadowColor = ASPECT[c];
-    ctx.shadowBlur = r * 3;
+    glow(ctx, x, y, r * 3.2, ASPECT[c], 0.9);
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fillStyle = g;
     ctx.fill();
-    ctx.restore();
   } else {
     ctx.fillStyle = ASPECT_DIM[c];
     ctx.fill();
@@ -856,7 +856,7 @@ function leftArrow(ctx: CanvasRenderingContext2D, x: number, y: number, r: numbe
   ctx.translate(x, y);
   const rot: Record<Ax, number> = { NORTH: 0, SOUTH: Math.PI, EAST: -Math.PI / 2, WEST: Math.PI / 2 };
   ctx.rotate(rot[ax]);
-  if (on) { ctx.shadowColor = color; ctx.shadowBlur = r * 3; }
+  if (on) glow(ctx, 0, 0, r * 3.4, color, 1);
   ctx.fillStyle = color;
   const k = r * 0.8;
   ctx.beginPath();
@@ -893,11 +893,9 @@ function drawPedSignal(ctx: CanvasRenderingContext2D, view: View, x: number, y: 
   roundRect(ctx, sx - w / 2, sy - h / 2, w, h, rad); ctx.fill();
   const lit = walk ? '#35e08a' : '#ff4d45';
   const lw = w - 0.36 * s, lh = h - 0.36 * s;
-  ctx.save();
-  ctx.shadowColor = lit; ctx.shadowBlur = 0.8 * s;
+  glow(ctx, sx, sy, h * 1.1, lit, 0.55);
   ctx.fillStyle = lit;
   roundRect(ctx, sx - lw / 2, sy - lh / 2, lw, lh, rad * 0.7); ctx.fill();
-  ctx.restore();
   const u = h * 0.46;
   ctx.save();
   ctx.translate(sx, sy);

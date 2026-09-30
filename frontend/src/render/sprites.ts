@@ -183,8 +183,9 @@ export function drawSprite(ctx: CanvasRenderingContext2D, s: BakedSprite, L: num
   for (const c of s.levels) if (c.height >= L * 1.1) lvl = c;
   ctx.save();
   ctx.rotate(Math.PI / 2);
+  // the mip level is at most ~2x the target size, so plain bilinear stays crisp and is far cheaper
+  // per frame than the 'high' resampler
   ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(lvl, -W / 2, -L / 2, W, L);
   ctx.restore();
 }
