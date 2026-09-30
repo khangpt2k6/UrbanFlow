@@ -110,17 +110,6 @@ a { color: inherit; }
 .welcome-facts span { font-size: 11.5px; color: var(--muted); }
 .welcome-foot { position: absolute; bottom: 20px; left: 0; right: 0; text-align: center; font-size: 12px; color: var(--faint); }
 
-/* the round light-glass social buttons, stacked at the left edge */
-.social { position: absolute; left: 28px; bottom: 28px; display: flex; flex-direction: column; gap: 14px; z-index: 2; }
-.social-btn {
-  width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; color: #1a2233;
-  background: radial-gradient(circle at 35% 30%, #ffffff, #d7dde7 70%);
-  border: 1px solid rgba(255, 255, 255, 0.85);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), inset 0 -3px 8px rgba(15, 23, 42, 0.12);
-  transition: transform 0.15s ease;
-}
-.social-btn:hover { transform: translateY(-2px); }
-
 /* ============================ SIM ============================ */
 .sim { position: fixed; inset: 0; }
 .sim-canvas { position: absolute; inset: 0; }
@@ -276,7 +265,5 @@ a { color: inherit; }
   .panel { top: auto; bottom: 64px; left: 12px; right: 12px; width: auto; max-height: 45%; }
   .welcome-card { padding: 30px 20px 22px; }
   .welcome-facts { grid-template-columns: 1fr; }
-  .social { left: 16px; bottom: 16px; flex-direction: row; }
-  .social-btn { width: 44px; height: 44px; }
   .welcome-foot { display: none; }
 }

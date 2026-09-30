@@ -43,16 +43,3 @@ export const IconBell = (p: Props) => <Svg {...p}><path d="M6 16V11a6 6 0 1 1 12
 export const IconArrowRight = (p: Props) => <Svg {...p}><path d="M5 12h14M13 6l6 6-6 6" /></Svg>;
 export const IconPanel = (p: Props) => <Svg {...p}><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M15 4v16" /></Svg>;
 export const IconPanelLeft = (p: Props) => <Svg {...p}><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M9 4v16" /></Svg>;
-export const IconGithub = (p: Props) => (
-  <Svg {...p}>
-    <path d="M15 21v-3.5a3 3 0 0 0-.9-2.3c3-.3 6-1.5 6-6.6a5.2 5.2 0 0 0-1.4-3.6 4.8 4.8 0 0 0-.1-3.6s-1.1-.3-3.7 1.4a12.8 12.8 0 0 0-6.8 0C5.5 1.1 4.4 1.4 4.4 1.4a4.8 4.8 0 0 0-.1 3.6A5.2 5.2 0 0 0 2.9 8.6c0 5.1 3 6.3 6 6.6a3 3 0 0 0-.9 2.3V21" />
-    <path d="M9 18c-4.5 1.5-4.5-2.5-6-3" />
-  </Svg>
-);
-export const IconLinkedin = (p: Props) => (
-  <Svg {...p}>
-    <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6Z" />
-    <rect x="2" y="9" width="4" height="12" rx="0.5" />
-    <circle cx="4" cy="4" r="2" />
-  </Svg>
-);

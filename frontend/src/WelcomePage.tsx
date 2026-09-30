@@ -1,10 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { LogoMark } from './Logo';
-import { IconArrowRight, IconGithub, IconLinkedin } from './Icons';
+import { IconArrowRight } from './Icons';
 import { drawStatic } from './render/draw';
 import { makeView } from './render/layout';
 import { loadSprites, onSpritesReady } from './render/sprites';
-import { LINKEDIN_URL, REPO_URL } from './links';
 
 interface Props {
   onLaunch: () => void;
@@ -37,11 +36,6 @@ export default function WelcomePage({ onLaunch }: Props) {
     <div className="welcome">
       <CityBackdrop />
       <div className="welcome-veil" />
-
-      <nav className="social">
-        <a className="social-btn" href={REPO_URL} target="_blank" rel="noreferrer" title="GitHub"><IconGithub size={22} /></a>
-        <a className="social-btn" href={LINKEDIN_URL} target="_blank" rel="noreferrer" title="LinkedIn"><IconLinkedin size={22} /></a>
-      </nav>
 
       <main className="welcome-card glass">
         <div className="welcome-badge"><span className="live-dot" />Real-time traffic simulation</div>

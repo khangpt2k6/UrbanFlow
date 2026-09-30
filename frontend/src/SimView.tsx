@@ -7,9 +7,8 @@ import StatsPanel from './panels/StatsPanel';
 import AlertsFeed from './panels/AlertsFeed';
 import ZoomBar from './panels/ZoomBar';
 import { LogoMark } from './Logo';
-import { IconGithub, IconLinkedin, IconPanel, IconPanelLeft } from './Icons';
+import { IconPanel, IconPanelLeft } from './Icons';
 import type { SignalState } from './types/snapshot';
-import { LINKEDIN_URL, REPO_URL } from './links';
 
 interface Props {
   onExit: () => void;
@@ -18,6 +17,10 @@ interface Props {
 export default function SimView({ onExit }: Props) {
   const stream = useTrafficStream();
   const camera = useMemo(() => new CameraController(), []);
+  // dev-only handle so Playwright checks can drive and read the camera
+  useEffect(() => {
+    if (import.meta.env.DEV) (window as unknown as { __ufCamera?: CameraController }).__ufCamera = camera;
+  }, [camera]);
   const [fps, setFps] = useState(0);
   const [signals, setSignals] = useState<SignalState | null>(null);
   const narrow = typeof window !== 'undefined' && window.innerWidth < 1100;
@@ -59,12 +62,6 @@ export default function SimView({ onExit }: Props) {
         <button className={`glass icon-btn ${showRight ? 'active' : ''}`} onClick={() => setShowRight((v) => !v)} title="Toggle controls panel">
           <IconPanel size={17} />
         </button>
-        <a className="glass icon-btn" href={REPO_URL} target="_blank" rel="noreferrer" title="Source on GitHub">
-          <IconGithub size={17} />
-        </a>
-        <a className="glass icon-btn" href={LINKEDIN_URL} target="_blank" rel="noreferrer" title="LinkedIn">
-          <IconLinkedin size={17} />
-        </a>
       </header>
 
       {showLeft && (
