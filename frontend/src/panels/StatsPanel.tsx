@@ -3,7 +3,7 @@ import type { ApproachName, SignalColor, SignalState, SimulationStats } from '..
 import { VEHICLE_TYPES } from '../render/vehicleTypes';
 import { drawVehicleArt } from '../render/vehicleArt';
 import { onSpritesReady, loadSprites } from '../render/sprites';
-import { IconShield } from '../Icons';
+import { IconChevron, IconShield } from '../Icons';
 
 interface Props {
   stats: SimulationStats | null;
@@ -56,7 +56,10 @@ const APPROACHES: [ApproachName, string][] = [['NORTH', 'N'], ['SOUTH', 'S'], ['
 function phaseLabel(s: SignalState | null): string {
   if (!s) return 'offline';
   const p = s.phase ?? '';
-  if (p.startsWith('PREEMPT')) return `Emergency pre-emption · ${p.replace('PREEMPT_', '').toLowerCase()}`;
+  if (p.startsWith('PREEMPT')) {
+    const dir = p.replace('PREEMPT_', '').split('_')[0].toLowerCase();
+    return `Emergency, clearing ${dir} approach`;
+  }
   if (p.includes('ALL_RED')) return 'All-red clearance';
   const map: Record<string, string> = { NS_THROUGH: 'North-south through', NS_LEFT: 'North-south protected left', EW_THROUGH: 'East-west through', EW_LEFT: 'East-west protected left' };
   for (const k of Object.keys(map)) if (p.startsWith(k)) return map[k];
@@ -67,6 +70,7 @@ export default function StatsPanel({ stats, connected, signals, fps }: Props) {
   const s = stats;
   const safe = (s?.collisions ?? 0) === 0;
   const total = Math.max(1, s?.totalVehicles ?? 0);
+  const [showMix, setShowMix] = useState(false);
   return (
     <div className="pane">
       <div className="pane-head">
@@ -79,11 +83,11 @@ export default function StatsPanel({ stats, connected, signals, fps }: Props) {
 
       <div className="metrics">
         <Metric label="Vehicles" value={`${s?.totalVehicles ?? 0}`} />
-        <Metric label="Avg speed" value={(s?.avgSpeedMps ?? 0).toFixed(1)} unit="m/s" />
-        <Metric label="Throughput" value={`${Math.round(s?.throughputPerMin ?? 0)}`} unit="/min" />
+        <Metric label="Speed" value={(s?.avgSpeedMps ?? 0).toFixed(1)} unit="m/s" />
+        <Metric label="Cleared" value={`${s?.clearedTotal ?? 0}`} />
         <Metric label="Updates" value={`${Math.round(s?.updatesPerSecond ?? 0)}`} unit="/s" />
         <Metric label="Threads" value={`${s?.activeThreads ?? 0}`} />
-        <Metric label="Cleared" value={`${s?.clearedTotal ?? 0}`} />
+        <Metric label="Render" value={`${Math.round(fps)}`} unit="fps" />
       </div>
 
       <div className="section">
@@ -101,8 +105,12 @@ export default function StatsPanel({ stats, connected, signals, fps }: Props) {
       </div>
 
       <div className="section">
-        <div className="label">Vehicle mix</div>
-        <div className="legend">
+        <button className={`disclosure ${showMix ? 'open' : ''}`} onClick={() => setShowMix((v) => !v)}>
+          <IconChevron size={14} />
+          <span className="label flush">Vehicle mix</span>
+          <span className="count">{s?.totalVehicles ?? 0} on road</span>
+        </button>
+        {showMix && <div className="legend disclosure-body">
           {VEHICLE_TYPES.map((t, i) => {
             const n = s?.perType?.[t.label] ?? 0;
             return (
@@ -114,12 +122,7 @@ export default function StatsPanel({ stats, connected, signals, fps }: Props) {
               </div>
             );
           })}
-        </div>
-      </div>
-
-      <div className="pane-foot">
-        <span>Render {Math.round(fps)} fps</span>
-        <span>Jitter buffer 100 ms</span>
+        </div>}
       </div>
     </div>
   );

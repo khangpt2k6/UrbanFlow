@@ -9,17 +9,17 @@ import { drawSprite, drawSpriteShadow, getSprite, type Paint, type SpriteName } 
 const C = {
   canvas: '#0a1120',
   canvasDot: 'rgba(148,163,184,0.13)',
-  asphalt: '#4a4d52',
-  asphaltBox: '#505358',
+  asphalt: '#585b61',
+  asphaltBox: '#5e6167',
   wear: 'rgba(20,22,26,0.07)',
   paint: 'rgba(238,238,232,0.9)',
   yellow: '#e2bd48',
-  concrete: '#b7b5ae',
+  concrete: '#c6c2b8',
   concreteJoint: 'rgba(60,58,52,0.12)',
   curb: '#d6d4cc',
-  grass: '#5f7c45',
-  grassLight: '#6b8a4d',
-  lot: '#57595d',
+  grass: '#5b8142',
+  grassLight: '#679150',
+  lot: '#3f4246',
   plaza: '#a9a7a0',
   tactile: '#d4b04a',
 };
@@ -73,7 +73,7 @@ interface Parked { x: number; y: number; vertical: boolean; flip: boolean; sprit
 interface ParkingLot extends Rect { stalls: Rect[]; cars: Parked[]; strip?: Rect }
 interface Park extends Rect { path: [number, number][] }
 
-const ROOFS = ['#a4a6a8', '#8e9196', '#bfbcb5', '#7b7f85', '#b2a998', '#9a9084', '#c8c6c0', '#6f747b'];
+const ROOFS = ['#b9b09f', '#8e98a6', '#cfcac0', '#a3705a', '#7f8f88', '#6b7480', '#bca489', '#9aa6b5'];
 const PARK_PAINTS: [Paint, number][] = [['white', 0.24], ['black', 0.2], ['silver', 0.16], ['graphite', 0.15], ['blue', 0.1], ['red', 0.08], ['pearl', 0.04], ['navy', 0.03]];
 
 function overlaps(a: Rect, b: Rect, m = 0): boolean {

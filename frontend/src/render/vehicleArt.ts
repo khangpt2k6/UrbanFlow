@@ -32,8 +32,8 @@ function pick<T>(r: number, table: [T, number][]): T {
 
 // Real-world paint shares (white, black and greys dominate actual traffic).
 const CAR_PAINTS: [Paint, number][] = [
-  ['white', 0.22], ['black', 0.18], ['silver', 0.13], ['graphite', 0.14], ['blue', 0.1],
-  ['red', 0.09], ['pearl', 0.05], ['navy', 0.04], ['sand', 0.03], ['green', 0.02],
+  ['white', 0.25], ['black', 0.13], ['silver', 0.15], ['graphite', 0.08], ['blue', 0.13],
+  ['red', 0.12], ['pearl', 0.06], ['navy', 0.03], ['sand', 0.03], ['green', 0.02],
 ];
 
 interface Look { sprite: SpriteName; paint: Paint }

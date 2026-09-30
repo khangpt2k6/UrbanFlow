@@ -41,7 +41,7 @@ function Slider({ label, min, max, step, value, unit, onChange }: SliderProps) {
 const MODES = [
   { key: 'off', label: 'Sparse', density: 25 },
   { key: 'avg', label: 'Normal', density: 50 },
-  { key: 'rush', label: 'Rush hour', density: 100 },
+  { key: 'rush', label: 'Rush', density: 100 },
 ];
 const SPEEDS = [0.5, 1, 2, 4];
 
@@ -142,8 +142,6 @@ export default function ControlPanel({ send, connected }: Props) {
           </div>
         )}
       </div>
-
-      <p className="pane-note">Ambulances and fire engines are dispatched at random. Signals pre-empt to clear their path.</p>
     </div>
   );
 }
