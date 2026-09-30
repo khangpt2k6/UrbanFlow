@@ -3,6 +3,7 @@ import type { MutableRefObject } from 'react';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import type { AlertMessage, SimulationStats, WorldSnapshot } from '../types/snapshot';
+import { Playout } from '../render/playout';
 
 // SockJS endpoint of the backend. In production set VITE_WS_URL at build time to the deployed
 // backend's /ws URL (e.g. https://urbanflow-backend.onrender.com/ws); locally it defaults to the
@@ -30,10 +31,8 @@ export interface ControlPayload {
 }
 
 export interface TrafficStream {
-  latestRef: MutableRefObject<WorldSnapshot | null>;
-  prevRef: MutableRefObject<WorldSnapshot | null>;
-  lastArrivalRef: MutableRefObject<number>;
-  intervalRef: MutableRefObject<number>;
+  /** Jitter buffer the canvas samples every frame (see Playout). */
+  playoutRef: MutableRefObject<Playout>;
   stats: SimulationStats | null;
   alerts: UiAlert[];
   connected: boolean;
@@ -46,10 +45,7 @@ export interface TrafficStream {
  * their own lower-frequency channels and drive the panels.
  */
 export function useTrafficStream(): TrafficStream {
-  const latestRef = useRef<WorldSnapshot | null>(null);
-  const prevRef = useRef<WorldSnapshot | null>(null);
-  const lastArrivalRef = useRef<number>(0);
-  const intervalRef = useRef<number>(33);
+  const playoutRef = useRef<Playout>(new Playout());
   const clientRef = useRef<Client | null>(null);
   const alertSeq = useRef(0);
 
@@ -69,15 +65,7 @@ export function useTrafficStream(): TrafficStream {
     client.onConnect = () => {
       setConnected(true);
       client.subscribe('/topic/world', (msg) => {
-        const snap = JSON.parse(msg.body) as WorldSnapshot;
-        const now = performance.now();
-        if (latestRef.current) {
-          const dt = now - lastArrivalRef.current;
-          if (dt > 4 && dt < 250) intervalRef.current = dt;
-        }
-        prevRef.current = latestRef.current;
-        latestRef.current = snap;
-        lastArrivalRef.current = now;
+        playoutRef.current.push(JSON.parse(msg.body) as WorldSnapshot, performance.now());
       });
       client.subscribe('/topic/stats', (msg) => {
         setStats(JSON.parse(msg.body) as SimulationStats);
@@ -91,8 +79,7 @@ export function useTrafficStream(): TrafficStream {
     client.onWebSocketClose = () => {
       // Until the WebSocket is connected, show empty roads + scenery only (no vehicles/signals).
       setConnected(false);
-      latestRef.current = null;
-      prevRef.current = null;
+      playoutRef.current.clear();
       setStats(null);
     };
     client.activate();
@@ -122,5 +109,5 @@ export function useTrafficStream(): TrafficStream {
     }
   }, []);
 
-  return { latestRef, prevRef, lastArrivalRef, intervalRef, stats, alerts, connected, send };
+  return { playoutRef, stats, alerts, connected, send };
 }
