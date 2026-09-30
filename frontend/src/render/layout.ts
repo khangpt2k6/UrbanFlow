@@ -31,10 +31,36 @@ export interface View {
   cy: number; // screen y of world origin
 }
 
-export function makeView(canvasW: number, canvasH: number, marginPx = 0): View {
+/**
+ * Figma-style camera over the world: `zoom` multiplies the fitted VIEW_SPAN scale (1 = the
+ * focused default), `x`/`y` is the world point (meters) shown at the canvas centre.
+ */
+export interface Camera {
+  zoom: number;
+  x: number;
+  y: number;
+}
+
+/** Opening zoom: a touch tighter than the fitted span so vehicles read large. */
+export const DEFAULT_ZOOM = 1.15;
+export const MIN_ZOOM = 0.38; // roughly the whole map on screen
+export const MAX_ZOOM = 5;
+
+export function makeView(canvasW: number, canvasH: number, marginPx = 0, cam?: Camera): View {
   const usable = Math.min(canvasW, canvasH) - 2 * marginPx;
-  const scale = Math.max(0.1, usable / VIEW_SPAN);
-  return { scale, cx: canvasW / 2, cy: canvasH / 2 };
+  const scale = Math.max(0.1, usable / VIEW_SPAN) * (cam?.zoom ?? 1);
+  return { scale, cx: canvasW / 2 - (cam?.x ?? 0) * scale, cy: canvasH / 2 + (cam?.y ?? 0) * scale };
+}
+
+export function screenToWorld(sx: number, sy: number, view: View): [number, number] {
+  return [(sx - view.cx) / view.scale, (view.cy - sy) / view.scale];
+}
+
+/** Keep the camera centre on the map so the city can never be dragged fully off screen. */
+export function clampCamera(cam: Camera): Camera {
+  const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom));
+  const lim = WORLD_SPAN / 2;
+  return { zoom, x: Math.min(lim, Math.max(-lim, cam.x)), y: Math.min(lim, Math.max(-lim, cam.y)) };
 }
 
 export function worldToScreen(x: number, y: number, view: View): [number, number] {

@@ -1,39 +1,68 @@
+import { useEffect, useRef } from 'react';
 import { LogoMark } from './Logo';
+import { IconArrowRight, IconGithub, IconLinkedin } from './Icons';
+import { drawStatic } from './render/draw';
+import { makeView } from './render/layout';
+import { loadSprites, onSpritesReady } from './render/sprites';
+import { LINKEDIN_URL, REPO_URL } from './links';
 
 interface Props {
   onLaunch: () => void;
 }
 
+/** The real map, drawn once (no traffic) and pushed far back as a dim, slowly drifting backdrop. */
+function CityBackdrop() {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const c = ref.current;
+    const ctx = c?.getContext('2d');
+    if (!c || !ctx) return;
+    loadSprites();
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const paint = () => {
+      c.width = Math.floor(window.innerWidth * dpr);
+      c.height = Math.floor(window.innerHeight * dpr);
+      drawStatic(ctx, makeView(c.width, c.height, 0, { zoom: 0.8, x: 0, y: 0 }), c.width, c.height, dpr);
+    };
+    paint();
+    const off = onSpritesReady(paint);
+    window.addEventListener('resize', paint);
+    return () => { off(); window.removeEventListener('resize', paint); };
+  }, []);
+  return <canvas ref={ref} className="welcome-city" aria-hidden="true" />;
+}
+
 export default function WelcomePage({ onLaunch }: Props) {
   return (
     <div className="welcome">
-      <div className="orb orb-a" />
-      <div className="orb orb-b" />
-      <div className="orb orb-c" />
-      <div className="grid-overlay" />
+      <CityBackdrop />
+      <div className="welcome-veil" />
 
-      <div className="welcome-inner">
-        <div className="welcome-badge">real-time smart-city simulation</div>
-        <div className="welcome-logo">
-          <LogoMark size={72} />
-        </div>
-        <h1 className="welcome-title">
-          Urban<span>Flow</span>
-        </h1>
+      <nav className="social">
+        <a className="social-btn" href={REPO_URL} target="_blank" rel="noreferrer" title="GitHub"><IconGithub size={22} /></a>
+        <a className="social-btn" href={LINKEDIN_URL} target="_blank" rel="noreferrer" title="LinkedIn"><IconLinkedin size={22} /></a>
+      </nav>
+
+      <main className="welcome-card glass">
+        <div className="welcome-badge"><span className="live-dot" />Real-time traffic simulation</div>
+        <div className="welcome-mark"><LogoMark size={56} /></div>
+        <h1 className="welcome-title">Urban<span>Flow</span></h1>
         <p className="welcome-tag">
-          A concurrent traffic-control engine in Java, streamed live to your browser. Watch up to
-          120 vehicles negotiate a signalized intersection with zero collisions, in real time.
+          A concurrent traffic-control engine in Java, streamed live to your browser. Up to 120 vehicles,
+          walkers and random emergency runs share one signalized intersection, with zero collisions.
         </p>
-
         <button className="launch-btn" onClick={onLaunch}>
-          <span>Launch simulation</span>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5 12h14M13 6l6 6-6 6" />
-          </svg>
+          Launch simulation
+          <IconArrowRight size={18} />
         </button>
+        <div className="welcome-facts">
+          <div><b>30</b><span>worker threads</span></div>
+          <div><b>0</b><span>collisions</span></div>
+          <div><b>30 Hz</b><span>live stream</span></div>
+        </div>
+      </main>
 
-        <div className="welcome-foot">Spring Boot · 30 threads · STOMP/WebSocket · React + Canvas</div>
-      </div>
+      <footer className="welcome-foot">Spring Boot · Java 17 · WebSocket · React · Canvas 2D</footer>
     </div>
   );
 }

@@ -5,9 +5,9 @@ html, body, #root {
 }
 
 body {
-  background: #eef5ee;
-  color: #1f2a37;
-  font-family: 'Baloo 2', 'Fredoka', 'Nunito', ui-rounded, 'Segoe UI', system-ui, sans-serif;
+  background: #0a1224;
+  color: #e8edf6;
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow: hidden;

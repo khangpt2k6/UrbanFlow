@@ -1,83 +1,125 @@
-import { useEffect, useRef } from 'react';
-import type { SimulationStats } from '../types/snapshot';
+import { useEffect, useRef, useState } from 'react';
+import type { ApproachName, SignalColor, SignalState, SimulationStats } from '../types/snapshot';
 import { VEHICLE_TYPES } from '../render/vehicleTypes';
 import { drawVehicleArt } from '../render/vehicleArt';
+import { onSpritesReady, loadSprites } from '../render/sprites';
+import { IconShield } from '../Icons';
 
 interface Props {
   stats: SimulationStats | null;
   connected: boolean;
+  signals: SignalState | null;
+  fps: number;
 }
 
-function Metric({ label, value, accent }: { label: string; value: string; accent?: string }) {
+function Metric({ label, value, unit }: { label: string; value: string; unit?: string }) {
   return (
     <div className="metric">
-      <div className="metric-value" style={accent ? { color: accent } : undefined}>{value}</div>
+      <div className="metric-value">{value}{unit && <span className="unit">{unit}</span>}</div>
       <div className="metric-label">{label}</div>
     </div>
   );
 }
 
-const ICON_W = 38;
-const ICON_H = 17;
+const ICON_W = 40;
+const ICON_H = 18;
+// Stable ids for the icon portraits (bus livery, trailer colour, rider colours).
+const ICON_ID = [3, 3, 4, 1, 0, 2, 0, 0, 0];
 
-// A tiny top-down portrait of the vehicle, drawn with the exact same canvas art the simulation
-// uses (drawVehicleArt) instead of a flat colour swatch, so the legend reads as real vehicles.
-// Each type is scaled to fill the icon box, so the bicycle is as legible as the truck.
+// A tiny top-down portrait drawn with the exact art the map uses, scaled to fill the box.
 function VehicleIcon({ typeIndex }: { typeIndex: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => { loadSprites(); return onSpritesReady(() => setReady(true)); }, []);
   useEffect(() => {
     const c = ref.current;
-    if (!c) return;
-    const ctx = c.getContext('2d');
-    if (!ctx) return;
+    const ctx = c?.getContext('2d');
+    if (!c || !ctx) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     c.width = ICON_W * dpr;
     c.height = ICON_H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, ICON_W, ICON_H);
     const t = VEHICLE_TYPES[typeIndex];
-    const margin = 2.5;
-    const scale = Math.min((ICON_W - margin * 2) / t.length, (ICON_H - margin * 2) / t.width);
-    ctx.save();
+    const len = Math.max(t.length, 2.4), wid = Math.max(t.width * (t.length < 3 ? 1.4 : 1.12), 0.95);
+    const scale = Math.min((ICON_W - 4) / len, (ICON_H - 3) / wid);
     ctx.translate(ICON_W / 2, ICON_H / 2);
-    ctx.scale(scale, scale);
-    // nowMs = 0: emergency flashbars render a single static lit frame (no animation in the legend).
-    drawVehicleArt(ctx, typeIndex, t.length, t.width, t.color, 0);
-    ctx.restore();
-  }, [typeIndex]);
+    // nowMs = 0: emergency light bars show one static lit frame
+    drawVehicleArt(ctx, typeIndex, len * scale, wid * scale, 0, ICON_ID[typeIndex], true);
+  }, [typeIndex, ready]);
   return <canvas ref={ref} className="leg-icon" style={{ width: ICON_W, height: ICON_H }} />;
 }
 
-export default function StatsPanel({ stats, connected }: Props) {
+const DOT: Record<SignalColor, string> = { GREEN: 'g', YELLOW: 'y', RED: 'r' };
+const APPROACHES: [ApproachName, string][] = [['NORTH', 'N'], ['SOUTH', 'S'], ['EAST', 'E'], ['WEST', 'W']];
+
+function phaseLabel(s: SignalState | null): string {
+  if (!s) return 'offline';
+  const p = s.phase ?? '';
+  if (p.startsWith('PREEMPT')) return `Emergency pre-emption · ${p.replace('PREEMPT_', '').toLowerCase()}`;
+  if (p.includes('ALL_RED')) return 'All-red clearance';
+  const map: Record<string, string> = { NS_THROUGH: 'North-south through', NS_LEFT: 'North-south protected left', EW_THROUGH: 'East-west through', EW_LEFT: 'East-west protected left' };
+  for (const k of Object.keys(map)) if (p.startsWith(k)) return map[k];
+  return p.replace(/_/g, ' ').toLowerCase();
+}
+
+export default function StatsPanel({ stats, connected, signals, fps }: Props) {
   const s = stats;
   const safe = (s?.collisions ?? 0) === 0;
+  const total = Math.max(1, s?.totalVehicles ?? 0);
   return (
-    <div className="card stats">
-      <div className="card-head">
-        <span className="card-title">Live stats</span>
-        <span className={`dot ${connected ? 'on' : 'off'}`} />
-      </div>
-
-      <div className={`safety ${safe ? 'safe' : 'bad'}`}>
-        <span className="safety-num">{s?.collisions ?? 0}</span>
-        <span className="safety-txt">collisions{safe ? ' · 100% safe' : ''}</span>
+    <div className="pane">
+      <div className="pane-head">
+        <span className="pane-title">Live</span>
+        <span className={`safety ${safe ? 'safe' : 'bad'}`}>
+          <IconShield size={13} />
+          {s?.collisions ?? 0} collisions
+        </span>
       </div>
 
       <div className="metrics">
-        <Metric label="vehicles" value={`${s?.totalVehicles ?? 0}`} accent="#4cc2ff" />
-        <Metric label="updates/s" value={`${Math.round(s?.updatesPerSecond ?? 0)}`} accent="#34d399" />
-        <Metric label="threads" value={`${s?.activeThreads ?? 0}`} accent="#a78bfa" />
-        <Metric label="avg speed" value={`${(s?.avgSpeedMps ?? 0).toFixed(1)}`} />
+        <Metric label="Vehicles" value={`${s?.totalVehicles ?? 0}`} />
+        <Metric label="Avg speed" value={(s?.avgSpeedMps ?? 0).toFixed(1)} unit="m/s" />
+        <Metric label="Throughput" value={`${Math.round(s?.throughputPerMin ?? 0)}`} unit="/min" />
+        <Metric label="Updates" value={`${Math.round(s?.updatesPerSecond ?? 0)}`} unit="/s" />
+        <Metric label="Threads" value={`${s?.activeThreads ?? 0}`} />
+        <Metric label="Cleared" value={`${s?.clearedTotal ?? 0}`} />
       </div>
 
-      <div className="legend">
-        {VEHICLE_TYPES.map((t, i) => (
-          <div className="leg" key={t.label}>
-            <VehicleIcon typeIndex={i} />
-            <span className="leg-label">{t.label}</span>
-            <span className="leg-count">{s?.perType?.[t.label] ?? 0}</span>
-          </div>
-        ))}
+      <div className="section">
+        <div className="label">Signal phase</div>
+        <div className="phase-name">{phaseLabel(connected ? signals : null)}</div>
+        <div className="phase-grid">
+          {APPROACHES.map(([a, short]) => (
+            <div className="phase-cell" key={a}>
+              <span className="phase-dir">{short}</span>
+              <span className={`lamp ${signals ? DOT[signals.through[a]] : ''}`} title="through" />
+              <span className={`lamp arrow ${signals && signals.left[a] !== 'RED' ? DOT[signals.left[a]] : ''}`} title="protected left">←</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="label">Vehicle mix</div>
+        <div className="legend">
+          {VEHICLE_TYPES.map((t, i) => {
+            const n = s?.perType?.[t.label] ?? 0;
+            return (
+              <div className="leg" key={t.label}>
+                <VehicleIcon typeIndex={i} />
+                <span className="leg-label">{t.label}</span>
+                <span className="leg-bar"><span style={{ width: `${(n / total) * 100}%` }} /></span>
+                <span className="leg-count">{n}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="pane-foot">
+        <span>Render {Math.round(fps)} fps</span>
+        <span>Jitter buffer 100 ms</span>
       </div>
     </div>
   );
