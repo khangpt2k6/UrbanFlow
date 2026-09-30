@@ -124,6 +124,9 @@ public class SimulationEngine {
     private final ScheduledExecutorService spawnerExecutor;
     private final ScheduledExecutorService statsExecutor;
     private final ExecutorService broadcastExecutor;
+    /** Latest-wins hand-off to the broadcaster thread: a slow socket skips stale frames instead of
+     *  queueing them, so viewer latency stays bounded (see {@link LatestWinsMailbox}). */
+    private final LatestWinsMailbox<WorldSnapshot> worldOut;
 
     // World state: mutated ONLY on the clock thread.
     private final List<Vehicle> worldVehicles = new ArrayList<>();
@@ -188,6 +191,7 @@ public class SimulationEngine {
         this.spawnerExecutor = spawnerExecutor;
         this.statsExecutor = statsExecutor;
         this.broadcastExecutor = broadcastExecutor;
+        this.worldOut = new LatestWinsMailbox<>(broadcastExecutor, publisher::publishWorld);
         this.rng = new Random(props.getRandomSeed());
         // Own RNG stream so walker routing never perturbs the vehicle-spawn RNG. The simulator
         // lives on the clock thread with the vehicle list (same single-writer ownership).
@@ -296,7 +300,7 @@ public class SimulationEngine {
     }
 
     private void broadcast(WorldSnapshot snapshot) {
-        broadcastExecutor.execute(() -> publisher.publishWorld(snapshot));
+        worldOut.offer(snapshot);
     }
 
     private void emergencyTick() {
