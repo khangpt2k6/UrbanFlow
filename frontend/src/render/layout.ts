@@ -43,7 +43,9 @@ export interface Camera {
 
 /** Opening zoom: a touch tighter than the fitted span so vehicles read large. */
 export const DEFAULT_ZOOM = 1.15;
-export const MIN_ZOOM = 0.38; // roughly the whole map on screen
+export const MIN_ZOOM = 0.3;
+/** Zoom that shows the whole artboard with its frame label clear of the top bar. */
+export const FIT_ZOOM = 0.35;
 export const MAX_ZOOM = 5;
 
 export function makeView(canvasW: number, canvasH: number, marginPx = 0, cam?: Camera): View {

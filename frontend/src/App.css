@@ -152,13 +152,37 @@ a { color: inherit; }
 
 .panel {
   position: absolute; top: 62px; z-index: 2; width: 236px; border-radius: 14px;
-  max-height: calc(100% - 62px - 76px); overflow-y: auto; overscroll-behavior: contain;
+  max-height: calc(100% - 62px - 76px); display: flex; flex-direction: column;
   animation: rise 0.45s ease 0.05s both;
 }
+.panel-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; border-radius: inherit; }
+.panel-body::-webkit-scrollbar { width: 6px; }
+.panel-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 999px; }
+
+/* Figma-style resize handles: a thin hit strip on the inner edge / bottom edge / corner, with an
+   accent line that shows on hover or while dragging */
+.rz { position: absolute; z-index: 3; touch-action: none; }
+.rz-x { top: 10px; bottom: 10px; width: 10px; cursor: ew-resize; }
+.rz-x.rz-left { right: -5px; }
+.rz-x.rz-right { left: -5px; }
+.rz-y { left: 10px; right: 10px; bottom: -5px; height: 10px; cursor: ns-resize; }
+.rz-xy { bottom: -6px; width: 14px; height: 14px; }
+.rz-xy.rz-left { right: -6px; cursor: nwse-resize; }
+.rz-xy.rz-right { left: -6px; cursor: nesw-resize; }
+.rz-x::after, .rz-y::after {
+  content: ''; position: absolute; border-radius: 999px; background: var(--accent);
+  opacity: 0; transition: opacity 0.15s ease;
+}
+.rz-x::after { top: 50%; left: 4px; width: 2px; height: 36px; transform: translateY(-50%); }
+.rz-y::after { left: 50%; top: 4px; height: 2px; width: 36px; transform: translateX(-50%); }
+.rz-x:hover::after, .rz-y:hover::after { opacity: 0.9; }
+.panel:hover .rz-x::after, .panel:hover .rz-y::after { opacity: 0.35; }
+.panel .rz-x:hover::after, .panel .rz-y:hover::after { opacity: 1; }
+body.resizing-w, body.resizing-w * { cursor: ew-resize !important; user-select: none; }
+body.resizing-h, body.resizing-h * { cursor: ns-resize !important; user-select: none; }
+body.resizing-wh, body.resizing-wh * { cursor: nwse-resize !important; user-select: none; }
 .hud-left { left: 12px; }
 .hud-right { right: 12px; }
-.panel::-webkit-scrollbar { width: 6px; }
-.panel::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 999px; }
 
 .pane { padding: 12px; }
 .pane-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
@@ -221,7 +245,7 @@ a { color: inherit; }
 .safety { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; }
 .safety.safe { color: var(--green); background: rgba(61, 220, 151, 0.1); }
 .safety.bad { color: var(--red); background: rgba(255, 107, 97, 0.12); }
-.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 5px; }
 .metric { padding: 7px 7px 6px; border-radius: 9px; background: var(--fill); border: 1px solid var(--stroke); min-width: 0; }
 .metric-value { font-family: var(--mono); font-size: 13.5px; font-weight: 600; letter-spacing: -0.02em; white-space: nowrap; }
 .metric-value .unit { font-size: 9.5px; color: var(--muted); margin-left: 2px; font-weight: 500; }
@@ -240,7 +264,7 @@ a { color: inherit; }
 .lamp.arrow.y { background: none; color: var(--amber); box-shadow: none; }
 
 .legend { display: flex; flex-direction: column; gap: 5px; }
-.leg { display: grid; grid-template-columns: 40px 1fr 40px 20px; align-items: center; gap: 8px; font-size: 12px; }
+.leg { display: grid; grid-template-columns: 40px minmax(0, 1fr) minmax(30px, 0.8fr) 22px; align-items: center; gap: 8px; font-size: 12px; }
 .leg-icon { display: block; }
 .leg-label { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .leg-bar { height: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
@@ -278,5 +302,4 @@ a { color: inherit; }
   .panel { top: auto; bottom: 64px; left: 12px; right: 12px; width: auto; max-height: 45%; }
   .welcome-card { padding: 30px 20px 22px; }
   .welcome-facts { grid-template-columns: 1fr; }
-  .welcome-foot { display: none; }
 }

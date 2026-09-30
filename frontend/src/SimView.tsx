@@ -6,6 +6,7 @@ import ControlPanel from './panels/ControlPanel';
 import StatsPanel from './panels/StatsPanel';
 import AlertsFeed from './panels/AlertsFeed';
 import ZoomBar from './panels/ZoomBar';
+import ResizablePanel from './panels/ResizablePanel';
 import { LogoMark } from './Logo';
 import { IconPanel, IconPanelLeft } from './Icons';
 import type { SignalState } from './types/snapshot';
@@ -19,8 +20,8 @@ export default function SimView({ onExit }: Props) {
   const camera = useMemo(() => new CameraController(), []);
   // dev-only handle so Playwright checks can drive and read the camera
   useEffect(() => {
-    if (import.meta.env.DEV) (window as unknown as { __ufCamera?: CameraController }).__ufCamera = camera;
-  }, [camera]);
+    if (import.meta.env.DEV) Object.assign(window, { __ufCamera: camera, __ufPlayout: stream.playoutRef });
+  }, [camera, stream.playoutRef]);
   const [fps, setFps] = useState(0);
   const [signals, setSignals] = useState<SignalState | null>(null);
   const narrow = typeof window !== 'undefined' && window.innerWidth < 1100;
@@ -65,14 +66,14 @@ export default function SimView({ onExit }: Props) {
       </header>
 
       {showLeft && (
-        <aside className="hud-left glass panel">
+        <ResizablePanel side="left" storageKey="uf.panel.left" defaultWidth={236}>
           <StatsPanel stats={stream.stats} connected={stream.connected} signals={signals} fps={fps} />
-        </aside>
+        </ResizablePanel>
       )}
       {showRight && (
-        <aside className="hud-right glass panel">
+        <ResizablePanel side="right" storageKey="uf.panel.right" defaultWidth={236}>
           <ControlPanel send={stream.send} connected={stream.connected} />
-        </aside>
+        </ResizablePanel>
       )}
 
       <ZoomBar camera={camera} />

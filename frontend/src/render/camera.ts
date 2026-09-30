@@ -1,4 +1,4 @@
-import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, clampCamera, type Camera } from './layout';
+import { DEFAULT_ZOOM, FIT_ZOOM, MAX_ZOOM, MIN_ZOOM, clampCamera, type Camera } from './layout';
 
 /**
  * Shared camera state between the canvas (wheel / drag input, per-frame easing) and the React
@@ -49,7 +49,7 @@ export class CameraController {
   }
 
   fitAll() {
-    this.set({ zoom: MIN_ZOOM, x: 0, y: 0 });
+    this.set({ zoom: FIT_ZOOM, x: 0, y: 0 });
   }
 
   /** Advance the easing; returns true while the camera is still moving. */
