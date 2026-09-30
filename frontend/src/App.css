@@ -88,7 +88,20 @@ a { color: inherit; }
   background: linear-gradient(180deg, #ffffff 30%, #b9c6de); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .welcome-title span { background: linear-gradient(120deg, #8fb4ff, #5ee3a8); -webkit-background-clip: text; background-clip: text; }
-.welcome-tag { margin: 18px auto 28px; max-width: 470px; color: var(--muted); font-size: 15px; line-height: 1.6; }
+.welcome-tag { margin: 16px auto 26px; max-width: 470px; color: var(--muted); font-size: 16px; line-height: 1.5; }
+.welcome-actions { display: flex; justify-content: center; align-items: center; gap: 12px; }
+.gh-btn {
+  width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; color: var(--text, #fff);
+  background: var(--fill); border: 1px solid var(--stroke);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.gh-btn:hover { transform: translateY(-1px); background: rgba(255, 255, 255, 0.12); }
+.welcome-stack { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 22px; }
+.stack-chip {
+  display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted);
+  padding: 6px 12px 6px 9px; border-radius: 999px; background: var(--fill); border: 1px solid var(--stroke);
+}
+.stack-chip img { display: block; }
 .launch-btn {
   display: inline-flex; align-items: center; gap: 10px; cursor: pointer;
   font-size: 15px; font-weight: 600; color: #0d1526; padding: 13px 22px; border-radius: 999px;
@@ -108,7 +121,6 @@ a { color: inherit; }
 .welcome-facts div { background: rgba(10, 16, 30, 0.7); padding: 12px 10px; display: flex; flex-direction: column; gap: 3px; }
 .welcome-facts b { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .welcome-facts span { font-size: 11.5px; color: var(--muted); }
-.welcome-foot { position: absolute; bottom: 20px; left: 0; right: 0; text-align: center; font-size: 12px; color: var(--faint); }
 
 /* ============================ SIM ============================ */
 .sim { position: fixed; inset: 0; }

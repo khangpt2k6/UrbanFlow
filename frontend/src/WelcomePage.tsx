@@ -1,9 +1,21 @@
 import { useEffect, useRef } from 'react';
 import { LogoMark } from './Logo';
-import { IconArrowRight } from './Icons';
+import { IconArrowRight, IconGithub } from './Icons';
+import { REPO_URL } from './links';
 import { drawStatic } from './render/draw';
 import { makeView } from './render/layout';
 import { loadSprites, onSpritesReady } from './render/sprites';
+import javaIcon from './assets/tech/java.svg';
+import springIcon from './assets/tech/spring.svg';
+import reactIcon from './assets/tech/react.svg';
+import tsIcon from './assets/tech/typescript.svg';
+
+const STACK = [
+  { name: 'Java', icon: javaIcon },
+  { name: 'Spring Boot', icon: springIcon },
+  { name: 'React', icon: reactIcon },
+  { name: 'TypeScript', icon: tsIcon },
+];
 
 interface Props {
   onLaunch: () => void;
@@ -41,22 +53,30 @@ export default function WelcomePage({ onLaunch }: Props) {
         <div className="welcome-badge"><span className="live-dot" />Real-time traffic simulation</div>
         <div className="welcome-mark"><LogoMark size={56} /></div>
         <h1 className="welcome-title">Urban<span>Flow</span></h1>
-        <p className="welcome-tag">
-          A concurrent traffic-control engine in Java, streamed live to your browser. Up to 120 vehicles,
-          walkers and random emergency runs share one signalized intersection, with zero collisions.
-        </p>
-        <button className="launch-btn" onClick={onLaunch}>
-          Launch simulation
-          <IconArrowRight size={18} />
-        </button>
+        <p className="welcome-tag">Concurrent traffic control in Java, streamed live.</p>
+        <div className="welcome-actions">
+          <button className="launch-btn" onClick={onLaunch}>
+            Launch simulation
+            <IconArrowRight size={18} />
+          </button>
+          <a className="gh-btn" href={REPO_URL} target="_blank" rel="noreferrer" title="GitHub" aria-label="GitHub repo">
+            <IconGithub size={22} />
+          </a>
+        </div>
         <div className="welcome-facts">
-          <div><b>30</b><span>worker threads</span></div>
+          <div><b>30</b><span>threads</span></div>
           <div><b>0</b><span>collisions</span></div>
-          <div><b>30 Hz</b><span>live stream</span></div>
+          <div><b>30 Hz</b><span>stream</span></div>
+        </div>
+        <div className="welcome-stack">
+          {STACK.map((t) => (
+            <span key={t.name} className="stack-chip" title={t.name}>
+              <img src={t.icon} alt="" width={18} height={18} />
+              {t.name}
+            </span>
+          ))}
         </div>
       </main>
-
-      <footer className="welcome-foot">Spring Boot · Java 17 · WebSocket · React · Canvas 2D</footer>
     </div>
   );
 }
